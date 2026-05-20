@@ -22,13 +22,17 @@ class BearerAuthError(Exception):
         self.error = error
         self.description = description
 
-    @property
-    def www_authenticate(self) -> str:
-        return (
-            f'Bearer realm="{BEARER_REALM}", '
-            f'error="{self.error}", '
-            f'error_description="{self.description}"'
-        )
+    def to_www_authenticate(self, *, resource_metadata: str | None = None) -> str:
+        """Render an RFC 6750-style challenge for bearer auth failures."""
+
+        parts = [
+            f'Bearer realm="{BEARER_REALM}"',
+            f'error="{self.error}"',
+            f'error_description="{self.description}"',
+        ]
+        if resource_metadata is not None:
+            parts.append(f'resource_metadata="{resource_metadata}"')
+        return ", ".join(parts)
 
 
 def get_expected_bearer_token() -> str:

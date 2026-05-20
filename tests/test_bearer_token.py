@@ -35,7 +35,8 @@ async def test_missing_authorization_header_returns_401(client):
     assert response.headers["WWW-Authenticate"] == (
         'Bearer realm="mcp-auth-test-server", '
         'error="invalid_request", '
-        'error_description="Missing Authorization header"'
+        'error_description="Missing Authorization header", '
+        'resource_metadata="http://test/.well-known/oauth-protected-resource"'
     )
 
 
@@ -50,6 +51,10 @@ async def test_invalid_token_returns_401_with_invalid_token_challenge(client):
     assert response.status_code == 401
     assert response.json() == {"detail": "Bearer token is invalid"}
     assert 'error="invalid_token"' in response.headers["WWW-Authenticate"]
+    assert (
+        'resource_metadata="http://test/.well-known/oauth-protected-resource"'
+        in response.headers["WWW-Authenticate"]
+    )
 
 
 @pytest.mark.asyncio
@@ -63,6 +68,10 @@ async def test_non_bearer_authorization_header_returns_401(client):
     assert response.status_code == 401
     assert response.json() == {"detail": "Authorization header must use Bearer token auth"}
     assert 'error="invalid_request"' in response.headers["WWW-Authenticate"]
+    assert (
+        'resource_metadata="http://test/.well-known/oauth-protected-resource"'
+        in response.headers["WWW-Authenticate"]
+    )
 
 
 @pytest.mark.asyncio

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 
 from mcp_auth_test_server.auth.bearer import BearerAuthError, validate_bearer_token_header
+from mcp_auth_test_server.discovery import PROTECTED_RESOURCE_METADATA_PATH, build_absolute_url
 from mcp_auth_test_server.mcp.base import BaseMCPHandler, JsonRpcError
 from mcp_auth_test_server.mcp.tools import get_core_tools
 
@@ -26,10 +27,15 @@ async def bearer_token_endpoint(request: Request) -> Response:
     try:
         validate_bearer_token_header(request.headers.get("authorization"))
     except BearerAuthError as exc:
+        resource_metadata_url = build_absolute_url(request, PROTECTED_RESOURCE_METADATA_PATH)
         return JSONResponse(
             status_code=401,
             content={"detail": exc.description},
-            headers={"WWW-Authenticate": exc.www_authenticate},
+            headers={
+                "WWW-Authenticate": exc.to_www_authenticate(
+                    resource_metadata=resource_metadata_url,
+                ),
+            },
         )
 
     try:

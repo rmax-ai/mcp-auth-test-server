@@ -52,7 +52,12 @@ Mock credentials:
 
 ## OAuth 2.1 Authorization Code + PKCE
 
-**Endpoint:** `/mcp/oauth-v21`
+**Endpoints:**
+- `/mcp/oauth-v21` — protected MCP endpoint
+- `/oauth-v21/authorize` — OAuth 2.1 authorization endpoint
+- `/oauth-v21/token` — OAuth 2.1 token endpoint
+- `/.well-known/oauth-protected-resource?resource=http://<host>/mcp/oauth-v21` — resource metadata
+- `/.well-known/oauth-authorization-server?resource=http://<host>/mcp/oauth-v21` — AS metadata
 **Spec:** OAuth 2.1 (draft)
 
 OAuth 2.1 with all security requirements:
@@ -60,7 +65,10 @@ OAuth 2.1 with all security requirements:
 - No implicit grant
 - Resource parameter (RFC 8707) on authorize + token
 - Audience validation on tokens
-- `iss` parameter (RFC 9207) on token response
+- `iss` parameter (RFC 9207) on authorization redirect, with `iss` echoed in mock token response
+
+Mock client:
+- `client_id=phase-7-public-client`
 
 ## Dynamic Client Registration
 

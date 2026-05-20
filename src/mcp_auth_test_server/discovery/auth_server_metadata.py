@@ -10,6 +10,9 @@ from mcp_auth_test_server.discovery import (
     MOCK_REGISTRATION_ENDPOINT_PATH,
     MOCK_SCOPES,
     MOCK_TOKEN_ENDPOINT_PATH,
+    OAUTH_V21_AUTHORIZATION_ENDPOINT_PATH,
+    OAUTH_V21_RESOURCE_PATH,
+    OAUTH_V21_TOKEN_ENDPOINT_PATH,
     build_absolute_url,
     get_origin_url,
 )
@@ -17,8 +20,33 @@ from mcp_auth_test_server.discovery import (
 router = APIRouter()
 
 
-def build_auth_server_metadata(request: Request) -> dict[str, object]:
+def build_auth_server_metadata(
+    request: Request,
+    *,
+    resource: str | None = None,
+) -> dict[str, object]:
     """Return authorization server metadata for the mock OAuth test flow."""
+
+    oauth_v21_resource = build_absolute_url(request, OAUTH_V21_RESOURCE_PATH)
+    if resource == oauth_v21_resource:
+        return {
+            "issuer": get_origin_url(request),
+            "authorization_endpoint": build_absolute_url(
+                request,
+                OAUTH_V21_AUTHORIZATION_ENDPOINT_PATH,
+            ),
+            "token_endpoint": build_absolute_url(request, OAUTH_V21_TOKEN_ENDPOINT_PATH),
+            "registration_endpoint": build_absolute_url(
+                request,
+                MOCK_REGISTRATION_ENDPOINT_PATH,
+            ),
+            "response_types_supported": ["code"],
+            "grant_types_supported": ["authorization_code"],
+            "token_endpoint_auth_methods_supported": ["none"],
+            "code_challenge_methods_supported": ["S256"],
+            "resource_indicators_supported": True,
+            "scopes_supported": MOCK_SCOPES,
+        }
 
     return {
         "issuer": get_origin_url(request),
@@ -45,4 +73,5 @@ async def oauth_authorization_server_metadata(
 ) -> dict[str, object]:
     """Expose authorization server metadata for RFC 8414 discovery."""
 
-    return build_auth_server_metadata(request)
+    resource = request.query_params.get("resource")
+    return build_auth_server_metadata(request, resource=resource)

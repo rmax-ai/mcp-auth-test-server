@@ -18,4 +18,5 @@ async def reset_oauth_state():
 async def client():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as test_client:
+        test_client.app_state = {"oauth_token_store": oauth_token_store}
         yield test_client

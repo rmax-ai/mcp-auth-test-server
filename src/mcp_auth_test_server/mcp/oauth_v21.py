@@ -1,4 +1,4 @@
-"""OAuth 2.0 authorization-code + PKCE protected endpoints."""
+"""OAuth 2.1 authorization server and protected MCP endpoint."""
 
 from __future__ import annotations
 
@@ -10,20 +10,29 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from mcp_auth_test_server.auth.bearer import BearerAuthError
 from mcp_auth_test_server.auth.oauth import (
     AUTHORIZATION_CODE_GRANT_TYPE,
-    CLIENT_CREDENTIALS_GRANT_TYPE,
     OAuthError,
     build_redirect_uri,
+    validate_access_token_audience,
     validate_access_token_grant_type,
     validate_access_token_header,
-    validate_authorization_request,
-    validate_scope,
+    validate_access_token_issuer,
     verify_pkce_code_verifier,
+)
+from mcp_auth_test_server.auth.oauth_v21 import (
+    validate_oauth_v21_authorization_request,
+    validate_oauth_v21_token_resource,
 )
 from mcp_auth_test_server.auth.token_store import (
     ACCESS_TOKEN_TTL_SECONDS,
     oauth_token_store,
 )
-from mcp_auth_test_server.discovery import MOCK_AUTHORIZATION_ENDPOINT_PATH
+from mcp_auth_test_server.discovery import (
+    OAUTH_V21_RESOURCE_PATH,
+    PROTECTED_RESOURCE_METADATA_PATH,
+    build_absolute_url,
+    build_discovery_url,
+    get_origin_url,
+)
 from mcp_auth_test_server.mcp.base import BaseMCPHandler, JsonRpcError
 from mcp_auth_test_server.mcp.tools import get_core_tools
 
@@ -33,7 +42,8 @@ handler = BaseMCPHandler(
     server_name="mcp-auth-test-server",
     server_version="0.1.0",
     instructions=(
-        "This endpoint requires an OAuth 2.0 bearer token obtained via authorization code + PKCE."
+        "This endpoint requires an OAuth 2.1 bearer token issued for this resource "
+        "via authorization code + PKCE with S256."
     ),
     tools=get_core_tools(),
 )
@@ -52,6 +62,7 @@ def _render_consent_page(
     redirect_uri: str,
     scope: str,
     state: str | None,
+    resource: str,
     code_challenge: str,
     code_challenge_method: str,
 ) -> str:
@@ -63,18 +74,19 @@ def _render_consent_page(
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Authorize MCP Test Client</title>
+    <title>Authorize MCP OAuth 2.1 Test Client</title>
   </head>
   <body>
-    <h1>Mock OAuth Consent</h1>
+    <h1>Mock OAuth 2.1 Consent</h1>
     <p>
       Client <strong>{client_id}</strong> is requesting access to scope
-      <strong>{scope}</strong>.
+      <strong>{scope}</strong> for resource <strong>{resource}</strong>.
     </p>
-    <form method="post" action="/oauth/authorize/consent">
+    <form method="post" action="/oauth-v21/authorize/consent">
       <input type="hidden" name="client_id" value="{client_id}" />
       <input type="hidden" name="redirect_uri" value="{redirect_uri}" />
       <input type="hidden" name="scope" value="{scope}" />
+      <input type="hidden" name="resource" value="{resource}" />
       <input type="hidden" name="code_challenge" value="{code_challenge}" />
       <input type="hidden" name="code_challenge_method" value="{code_challenge_method}" />
       {state_markup}
@@ -86,12 +98,30 @@ def _render_consent_page(
 """.strip()
 
 
-@router.get("/oauth/authorize")
+def _oauth_v21_resource(request: Request) -> str:
+    return build_absolute_url(request, OAUTH_V21_RESOURCE_PATH)
+
+
+def _oauth_v21_resource_metadata_url(request: Request) -> str:
+    return build_discovery_url(
+        request,
+        PROTECTED_RESOURCE_METADATA_PATH,
+        resource=_oauth_v21_resource(request),
+    )
+
+
+@router.get("/oauth-v21/authorize")
 async def authorize(request: Request) -> Response:
-    """Render mock consent for a valid PKCE authorization request."""
+    """Render mock consent for a valid OAuth 2.1 authorization request."""
+
+    issuer = get_origin_url(request)
+    expected_resource = _oauth_v21_resource(request)
 
     try:
-        auth_request = validate_authorization_request(dict(request.query_params))
+        auth_request = validate_oauth_v21_authorization_request(
+            dict(request.query_params),
+            expected_resource=expected_resource,
+        )
     except OAuthError as exc:
         return JSONResponse(status_code=exc.status_code, content=exc.as_response())
 
@@ -100,7 +130,7 @@ async def authorize(request: Request) -> Response:
             client_id=auth_request.client_id,
             redirect_uri=auth_request.redirect_uri,
             scope=auth_request.scope,
-            resource=MOCK_AUTHORIZATION_ENDPOINT_PATH,
+            resource=auth_request.resource,
             code_challenge=auth_request.code_challenge,
             code_challenge_method=auth_request.code_challenge_method,
         )
@@ -109,6 +139,7 @@ async def authorize(request: Request) -> Response:
                 auth_request.redirect_uri,
                 code=record.code,
                 state=auth_request.state,
+                iss=issuer,
             ),
             status_code=302,
         )
@@ -119,29 +150,34 @@ async def authorize(request: Request) -> Response:
             redirect_uri=auth_request.redirect_uri,
             scope=auth_request.scope,
             state=auth_request.state,
+            resource=auth_request.resource,
             code_challenge=auth_request.code_challenge,
             code_challenge_method=auth_request.code_challenge_method,
         ),
     )
 
 
-@router.post("/oauth/authorize/consent")
+@router.post("/oauth-v21/authorize/consent")
 async def authorize_consent(request: Request) -> Response:
-    """Simulate browser consent and redirect with code or error."""
+    """Simulate browser consent and redirect with code or error for OAuth 2.1."""
 
     form_data = parse_qs((await request.body()).decode("utf-8"), keep_blank_values=True)
+    issuer = get_origin_url(request)
+    expected_resource = _oauth_v21_resource(request)
 
     try:
-        auth_request = validate_authorization_request(
+        auth_request = validate_oauth_v21_authorization_request(
             {
                 "response_type": "code",
                 "client_id": _form_field(form_data, "client_id"),
                 "redirect_uri": _form_field(form_data, "redirect_uri"),
                 "scope": _form_field(form_data, "scope"),
                 "state": _form_field(form_data, "state"),
+                "resource": _form_field(form_data, "resource"),
                 "code_challenge": _form_field(form_data, "code_challenge"),
                 "code_challenge_method": _form_field(form_data, "code_challenge_method"),
-            }
+            },
+            expected_resource=expected_resource,
         )
     except OAuthError as exc:
         return JSONResponse(status_code=exc.status_code, content=exc.as_response())
@@ -153,6 +189,7 @@ async def authorize_consent(request: Request) -> Response:
                 auth_request.redirect_uri,
                 state=auth_request.state,
                 error="access_denied",
+                iss=issuer,
             ),
             status_code=302,
         )
@@ -161,7 +198,7 @@ async def authorize_consent(request: Request) -> Response:
         client_id=auth_request.client_id,
         redirect_uri=auth_request.redirect_uri,
         scope=auth_request.scope,
-        resource=MOCK_AUTHORIZATION_ENDPOINT_PATH,
+        resource=auth_request.resource,
         code_challenge=auth_request.code_challenge,
         code_challenge_method=auth_request.code_challenge_method,
     )
@@ -170,125 +207,101 @@ async def authorize_consent(request: Request) -> Response:
             auth_request.redirect_uri,
             code=record.code,
             state=auth_request.state,
+            iss=issuer,
         ),
         status_code=302,
     )
 
 
-@router.post("/oauth/token")
+@router.post("/oauth-v21/token")
 async def token(request: Request) -> JSONResponse:
-    """Issue bearer access tokens for supported OAuth grant types."""
+    """Issue OAuth 2.1 bearer tokens for the mock protected resource."""
 
     form_data = parse_qs((await request.body()).decode("utf-8"), keep_blank_values=True)
     grant_type = _form_field(form_data, "grant_type")
+    code = _form_field(form_data, "code")
+    redirect_uri = _form_field(form_data, "redirect_uri")
     client_id = _form_field(form_data, "client_id")
+    code_verifier = _form_field(form_data, "code_verifier")
+    resource = _form_field(form_data, "resource")
+    expected_resource = _oauth_v21_resource(request)
+    issuer = get_origin_url(request)
 
-    if grant_type == AUTHORIZATION_CODE_GRANT_TYPE:
-        code = _form_field(form_data, "code")
-        redirect_uri = _form_field(form_data, "redirect_uri")
-        code_verifier = _form_field(form_data, "code_verifier")
-
-        if not code or not redirect_uri or not client_id or not code_verifier:
-            error = OAuthError(
-                error="invalid_request",
-                description="code, redirect_uri, client_id, and code_verifier are required",
-                status_code=400,
-            )
-            return JSONResponse(status_code=error.status_code, content=error.as_response())
-
-        code_record = oauth_token_store.consume_authorization_code(
-            code=code,
-            client_id=client_id,
-            redirect_uri=redirect_uri,
+    if grant_type != AUTHORIZATION_CODE_GRANT_TYPE:
+        error = OAuthError(
+            error="unsupported_grant_type",
+            description="grant_type must be authorization_code",
+            status_code=400,
         )
-        if code_record is None:
-            error = OAuthError(
-                error="invalid_grant",
-                description="authorization code is invalid",
-                status_code=400,
-            )
-            return JSONResponse(status_code=error.status_code, content=error.as_response())
+        return JSONResponse(status_code=error.status_code, content=error.as_response())
 
-        if not verify_pkce_code_verifier(
-            code_verifier=code_verifier,
-            code_challenge=code_record.code_challenge,
-        ):
-            error = OAuthError(
-                error="invalid_grant",
-                description="code_verifier does not match code_challenge",
-                status_code=400,
-            )
-            return JSONResponse(status_code=error.status_code, content=error.as_response())
-
-        access_token = oauth_token_store.issue_access_token(
-            client_id=client_id,
-            scope=code_record.scope,
-            grant_type=AUTHORIZATION_CODE_GRANT_TYPE,
+    if not code or not redirect_uri or not client_id or not code_verifier:
+        error = OAuthError(
+            error="invalid_request",
+            description="code, redirect_uri, client_id, and code_verifier are required",
+            status_code=400,
         )
-        return JSONResponse(
-            status_code=200,
-            content={
-                "access_token": access_token.access_token,
-                "token_type": access_token.token_type,
-                "expires_in": ACCESS_TOKEN_TTL_SECONDS,
-                "scope": access_token.scope,
-            },
-        )
+        return JSONResponse(status_code=error.status_code, content=error.as_response())
 
-    if grant_type == CLIENT_CREDENTIALS_GRANT_TYPE:
-        client_secret = _form_field(form_data, "client_secret")
-        requested_scope = _form_field(form_data, "scope") or "mcp:read"
-
-        if not client_id or not client_secret:
-            error = OAuthError(
-                error="invalid_request",
-                description="client_id and client_secret are required",
-                status_code=400,
-            )
-            return JSONResponse(status_code=error.status_code, content=error.as_response())
-
-        if not oauth_token_store.is_valid_client_credentials(
-            client_id=client_id,
-            client_secret=client_secret,
-        ):
-            error = OAuthError(
-                error="invalid_client",
-                description="client credentials are invalid",
-                status_code=401,
-            )
-            return JSONResponse(status_code=error.status_code, content=error.as_response())
-
-        try:
-            validate_scope(requested_scope)
-        except OAuthError as exc:
-            return JSONResponse(status_code=exc.status_code, content=exc.as_response())
-
-        access_token = oauth_token_store.issue_access_token(
-            client_id=client_id,
-            scope=requested_scope,
-            grant_type=CLIENT_CREDENTIALS_GRANT_TYPE,
-        )
-        return JSONResponse(
-            status_code=200,
-            content={
-                "access_token": access_token.access_token,
-                "token_type": access_token.token_type,
-                "expires_in": ACCESS_TOKEN_TTL_SECONDS,
-                "scope": access_token.scope,
-            },
-        )
-
-    error = OAuthError(
-        error="unsupported_grant_type",
-        description="grant_type must be authorization_code or client_credentials",
-        status_code=400,
+    code_record = oauth_token_store.consume_authorization_code(
+        code=code,
+        client_id=client_id,
+        redirect_uri=redirect_uri,
     )
-    return JSONResponse(status_code=error.status_code, content=error.as_response())
+    if code_record is None:
+        error = OAuthError(
+            error="invalid_grant",
+            description="authorization code is invalid",
+            status_code=400,
+        )
+        return JSONResponse(status_code=error.status_code, content=error.as_response())
+
+    try:
+        validated_resource = validate_oauth_v21_token_resource(
+            resource=resource,
+            expected_resource=expected_resource,
+            authorized_resource=code_record.resource,
+        )
+    except OAuthError as exc:
+        return JSONResponse(status_code=exc.status_code, content=exc.as_response())
+
+    if not verify_pkce_code_verifier(
+        code_verifier=code_verifier,
+        code_challenge=code_record.code_challenge,
+    ):
+        error = OAuthError(
+            error="invalid_grant",
+            description="code_verifier does not match code_challenge",
+            status_code=400,
+        )
+        return JSONResponse(status_code=error.status_code, content=error.as_response())
+
+    access_token = oauth_token_store.issue_access_token(
+        client_id=client_id,
+        scope=code_record.scope,
+        grant_type=AUTHORIZATION_CODE_GRANT_TYPE,
+        audience=validated_resource,
+        issuer=issuer,
+    )
+    return JSONResponse(
+        status_code=200,
+        content={
+            "access_token": access_token.access_token,
+            "token_type": access_token.token_type,
+            "expires_in": ACCESS_TOKEN_TTL_SECONDS,
+            "scope": access_token.scope,
+            "aud": validated_resource,
+            "iss": issuer,
+        },
+    )
 
 
-@router.post("/mcp/oauth-v2-auth-code")
-async def oauth_v2_auth_code_endpoint(request: Request) -> Response:
-    """Require an issued OAuth access token before handling MCP JSON-RPC."""
+@router.post("/mcp/oauth-v21")
+async def oauth_v21_endpoint(request: Request) -> Response:
+    """Require an OAuth 2.1 token scoped to this protected resource."""
+
+    expected_resource = _oauth_v21_resource(request)
+    expected_issuer = get_origin_url(request)
 
     try:
         token_record = validate_access_token_header(request.headers.get("authorization"))
@@ -296,11 +309,23 @@ async def oauth_v2_auth_code_endpoint(request: Request) -> Response:
             token_record,
             expected_grant_type=AUTHORIZATION_CODE_GRANT_TYPE,
         )
+        validate_access_token_audience(
+            token_record,
+            expected_audience=expected_resource,
+        )
+        validate_access_token_issuer(
+            token_record,
+            expected_issuer=expected_issuer,
+        )
     except BearerAuthError as exc:
         return JSONResponse(
             status_code=401,
             content={"detail": exc.description},
-            headers={"WWW-Authenticate": exc.to_www_authenticate()},
+            headers={
+                "WWW-Authenticate": exc.to_www_authenticate(
+                    resource_metadata=_oauth_v21_resource_metadata_url(request),
+                )
+            },
         )
 
     try:

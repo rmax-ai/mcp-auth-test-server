@@ -125,6 +125,7 @@ def build_redirect_uri(
     code: str | None = None,
     state: str | None = None,
     error: str | None = None,
+    iss: str | None = None,
 ) -> str:
     """Build the redirect target for authorize success or failure."""
 
@@ -135,6 +136,8 @@ def build_redirect_uri(
         params["state"] = state
     if error is not None:
         params["error"] = error
+    if iss is not None:
+        params["iss"] = iss
     separator = "&" if "?" in redirect_uri else "?"
     return f"{redirect_uri}{separator}{urlencode(params)}"
 
@@ -183,4 +186,32 @@ def validate_access_token_grant_type(
         raise BearerAuthError(
             error="invalid_token",
             description=f"Bearer token must be issued via {expected_grant_type}",
+        )
+
+
+def validate_access_token_audience(
+    record: AccessTokenRecord,
+    *,
+    expected_audience: str,
+) -> None:
+    """Ensure the access token was issued for the expected protected resource."""
+
+    if record.audience != expected_audience:
+        raise BearerAuthError(
+            error="invalid_token",
+            description="Bearer token audience does not match this protected resource",
+        )
+
+
+def validate_access_token_issuer(
+    record: AccessTokenRecord,
+    *,
+    expected_issuer: str,
+) -> None:
+    """Ensure the access token was issued by the expected mock authorization server."""
+
+    if record.issuer != expected_issuer:
+        raise BearerAuthError(
+            error="invalid_token",
+            description="Bearer token issuer is invalid",
         )

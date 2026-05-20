@@ -21,6 +21,7 @@ class AuthorizationCodeRecord:
     client_id: str
     redirect_uri: str
     scope: str
+    resource: str
     code_challenge: str
     code_challenge_method: str
     expires_at: datetime
@@ -34,6 +35,8 @@ class AccessTokenRecord:
     client_id: str
     scope: str
     grant_type: str
+    audience: str | None
+    issuer: str | None
     expires_at: datetime
     token_type: str = "Bearer"
 
@@ -65,6 +68,7 @@ class OAuthTokenStore:
         client_id: str,
         redirect_uri: str,
         scope: str,
+        resource: str,
         code_challenge: str,
         code_challenge_method: str,
     ) -> AuthorizationCodeRecord:
@@ -75,6 +79,7 @@ class OAuthTokenStore:
             client_id=client_id,
             redirect_uri=redirect_uri,
             scope=scope,
+            resource=resource,
             code_challenge=code_challenge,
             code_challenge_method=code_challenge_method,
             expires_at=self._now() + timedelta(seconds=AUTHORIZATION_CODE_TTL_SECONDS),
@@ -106,6 +111,8 @@ class OAuthTokenStore:
         client_id: str,
         scope: str,
         grant_type: str,
+        audience: str | None = None,
+        issuer: str | None = None,
     ) -> AccessTokenRecord:
         """Create and persist a bearer access token."""
 
@@ -114,6 +121,8 @@ class OAuthTokenStore:
             client_id=client_id,
             scope=scope,
             grant_type=grant_type,
+            audience=audience,
+            issuer=issuer,
             expires_at=self._now() + timedelta(seconds=ACCESS_TOKEN_TTL_SECONDS),
         )
         self._access_tokens[record.access_token] = record

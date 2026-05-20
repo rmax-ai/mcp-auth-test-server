@@ -12,6 +12,7 @@ from mcp_auth_test_server.mcp.bearer_token import router as bearer_token_router
 from mcp_auth_test_server.mcp.no_auth import router as no_auth_router
 from mcp_auth_test_server.mcp.oauth_v2_2l import router as oauth_v2_2l_router
 from mcp_auth_test_server.mcp.oauth_v2_3l import router as oauth_v2_3l_router
+from mcp_auth_test_server.mcp.oauth_v21 import router as oauth_v21_router
 
 app = FastAPI(
     title="MCP Auth Test Server",
@@ -23,6 +24,7 @@ app.include_router(no_auth_router)
 app.include_router(bearer_token_router)
 app.include_router(oauth_v2_2l_router)
 app.include_router(oauth_v2_3l_router)
+app.include_router(oauth_v21_router)
 app.include_router(protected_resource_router)
 app.include_router(auth_server_metadata_router)
 

@@ -27,8 +27,8 @@ HMAC-SHA1 signature-based authentication. Consumer key/secret pair verified agai
 - `/mcp/oauth-v2-auth-code` — protected MCP endpoint
 - `/.well-known/oauth-authorization-server` — server metadata
 - `/.well-known/oauth-protected-resource` — resource metadata
-- `/authorize` — authorization endpoint
-- `/token` — token endpoint
+- `/oauth/authorize` — authorization endpoint
+- `/oauth/token` — token endpoint
 
 **Flow:**
 1. Client requests MCP → 401 + WWW-Authenticate with resource_metadata
@@ -46,6 +46,9 @@ HMAC-SHA1 signature-based authentication. Consumer key/secret pair verified agai
 **Spec:** RFC 6749 Section 4.4
 
 Machine-to-machine flow. Client sends `grant_type=client_credentials` to `/token` with client_id/client_secret, receives access token.
+Mock credentials:
+- `client_id=phase-6-service-client`
+- `client_secret=phase-6-service-secret`
 
 ## OAuth 2.1 Authorization Code + PKCE
 

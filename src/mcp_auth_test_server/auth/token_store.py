@@ -1,4 +1,4 @@
-"""In-memory storage for mock OAuth authorization codes and access tokens."""
+"""In-memory storage for mock OAuth clients, authorization codes, and access tokens."""
 
 from __future__ import annotations
 
@@ -8,6 +8,9 @@ from secrets import token_urlsafe
 
 AUTHORIZATION_CODE_TTL_SECONDS = 300
 ACCESS_TOKEN_TTL_SECONDS = 3600
+MOCK_CLIENT_CREDENTIALS = {
+    "phase-6-service-client": "phase-6-service-secret",
+}
 
 
 @dataclass(slots=True)
@@ -30,6 +33,7 @@ class AccessTokenRecord:
     access_token: str
     client_id: str
     scope: str
+    grant_type: str
     expires_at: datetime
     token_type: str = "Bearer"
 
@@ -46,6 +50,14 @@ class OAuthTokenStore:
 
         self._authorization_codes.clear()
         self._access_tokens.clear()
+
+    def is_valid_client_credentials(self, *, client_id: str, client_secret: str) -> bool:
+        """Return True when the supplied mock client credentials are valid."""
+
+        expected_secret = MOCK_CLIENT_CREDENTIALS.get(client_id)
+        if expected_secret is None:
+            return False
+        return client_secret == expected_secret
 
     def issue_authorization_code(
         self,
@@ -93,6 +105,7 @@ class OAuthTokenStore:
         *,
         client_id: str,
         scope: str,
+        grant_type: str,
     ) -> AccessTokenRecord:
         """Create and persist a bearer access token."""
 
@@ -100,6 +113,7 @@ class OAuthTokenStore:
             access_token=token_urlsafe(32),
             client_id=client_id,
             scope=scope,
+            grant_type=grant_type,
             expires_at=self._now() + timedelta(seconds=ACCESS_TOKEN_TTL_SECONDS),
         )
         self._access_tokens[record.access_token] = record

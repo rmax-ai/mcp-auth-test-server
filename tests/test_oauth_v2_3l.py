@@ -174,3 +174,26 @@ async def test_oauth_mcp_endpoint_requires_issued_access_token(client):
         'error="invalid_request", '
         'error_description="Missing Authorization header"'
     )
+
+
+@pytest.mark.asyncio
+async def test_auth_code_endpoint_rejects_client_credentials_token(client):
+    token_response = await client.post(
+        "/oauth/token",
+        data={
+            "grant_type": "client_credentials",
+            "client_id": "phase-6-service-client",
+            "client_secret": "phase-6-service-secret",
+        },
+    )
+
+    response = await client.post(
+        "/mcp/oauth-v2-auth-code",
+        headers={"Authorization": f"Bearer {token_response.json()['access_token']}"},
+        json={"jsonrpc": "2.0", "id": "wrong-grant", "method": "initialize", "params": {}},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {
+        "detail": "Bearer token must be issued via authorization_code",
+    }

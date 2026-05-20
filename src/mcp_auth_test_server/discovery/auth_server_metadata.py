@@ -32,8 +32,8 @@ def build_auth_server_metadata(request: Request) -> dict[str, object]:
             MOCK_REGISTRATION_ENDPOINT_PATH,
         ),
         "response_types_supported": ["code"],
-        "grant_types_supported": ["authorization_code"],
-        "token_endpoint_auth_methods_supported": ["none"],
+        "grant_types_supported": ["authorization_code", "client_credentials"],
+        "token_endpoint_auth_methods_supported": ["none", "client_secret_post"],
         "code_challenge_methods_supported": ["S256"],
         "scopes_supported": MOCK_SCOPES,
     }

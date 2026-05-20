@@ -12,6 +12,8 @@ from mcp_auth_test_server.auth.token_store import AccessTokenRecord, oauth_token
 from mcp_auth_test_server.discovery import MOCK_SCOPES
 
 DEFAULT_OAUTH_SCOPE = MOCK_SCOPES[0]
+AUTHORIZATION_CODE_GRANT_TYPE = "authorization_code"
+CLIENT_CREDENTIALS_GRANT_TYPE = "client_credentials"
 
 
 class OAuthError(Exception):
@@ -168,3 +170,17 @@ def validate_access_token_header(authorization_header: str | None) -> AccessToke
             description="Bearer token is invalid",
         )
     return record
+
+
+def validate_access_token_grant_type(
+    record: AccessTokenRecord,
+    *,
+    expected_grant_type: str,
+) -> None:
+    """Ensure the access token was issued from the expected OAuth grant."""
+
+    if record.grant_type != expected_grant_type:
+        raise BearerAuthError(
+            error="invalid_token",
+            description=f"Bearer token must be issued via {expected_grant_type}",
+        )

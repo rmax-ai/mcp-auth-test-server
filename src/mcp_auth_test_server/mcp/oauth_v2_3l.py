@@ -9,10 +9,14 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 
 from mcp_auth_test_server.auth.bearer import BearerAuthError
 from mcp_auth_test_server.auth.oauth import (
+    AUTHORIZATION_CODE_GRANT_TYPE,
+    CLIENT_CREDENTIALS_GRANT_TYPE,
     OAuthError,
     build_redirect_uri,
+    validate_access_token_grant_type,
     validate_access_token_header,
     validate_authorization_request,
+    validate_scope,
     verify_pkce_code_verifier,
 )
 from mcp_auth_test_server.auth.token_store import (
@@ -170,67 +174,113 @@ async def authorize_consent(request: Request) -> Response:
 
 @router.post("/oauth/token")
 async def token(request: Request) -> JSONResponse:
-    """Exchange an authorization code for a bearer access token."""
+    """Issue bearer access tokens for supported OAuth grant types."""
 
     form_data = parse_qs((await request.body()).decode("utf-8"), keep_blank_values=True)
     grant_type = _form_field(form_data, "grant_type")
-    code = _form_field(form_data, "code")
-    redirect_uri = _form_field(form_data, "redirect_uri")
     client_id = _form_field(form_data, "client_id")
-    code_verifier = _form_field(form_data, "code_verifier")
 
-    if grant_type != "authorization_code":
-        error = OAuthError(
-            error="unsupported_grant_type",
-            description="grant_type must be authorization_code",
-            status_code=400,
-        )
-        return JSONResponse(status_code=error.status_code, content=error.as_response())
-    if not code or not redirect_uri or not client_id or not code_verifier:
-        error = OAuthError(
-            error="invalid_request",
-            description="code, redirect_uri, client_id, and code_verifier are required",
-            status_code=400,
-        )
-        return JSONResponse(status_code=error.status_code, content=error.as_response())
+    if grant_type == AUTHORIZATION_CODE_GRANT_TYPE:
+        code = _form_field(form_data, "code")
+        redirect_uri = _form_field(form_data, "redirect_uri")
+        code_verifier = _form_field(form_data, "code_verifier")
 
-    code_record = oauth_token_store.consume_authorization_code(
-        code=code,
-        client_id=client_id,
-        redirect_uri=redirect_uri,
+        if not code or not redirect_uri or not client_id or not code_verifier:
+            error = OAuthError(
+                error="invalid_request",
+                description="code, redirect_uri, client_id, and code_verifier are required",
+                status_code=400,
+            )
+            return JSONResponse(status_code=error.status_code, content=error.as_response())
+
+        code_record = oauth_token_store.consume_authorization_code(
+            code=code,
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+        )
+        if code_record is None:
+            error = OAuthError(
+                error="invalid_grant",
+                description="authorization code is invalid",
+                status_code=400,
+            )
+            return JSONResponse(status_code=error.status_code, content=error.as_response())
+
+        if not verify_pkce_code_verifier(
+            code_verifier=code_verifier,
+            code_challenge=code_record.code_challenge,
+        ):
+            error = OAuthError(
+                error="invalid_grant",
+                description="code_verifier does not match code_challenge",
+                status_code=400,
+            )
+            return JSONResponse(status_code=error.status_code, content=error.as_response())
+
+        access_token = oauth_token_store.issue_access_token(
+            client_id=client_id,
+            scope=code_record.scope,
+            grant_type=AUTHORIZATION_CODE_GRANT_TYPE,
+        )
+        return JSONResponse(
+            status_code=200,
+            content={
+                "access_token": access_token.access_token,
+                "token_type": access_token.token_type,
+                "expires_in": ACCESS_TOKEN_TTL_SECONDS,
+                "scope": access_token.scope,
+            },
+        )
+
+    if grant_type == CLIENT_CREDENTIALS_GRANT_TYPE:
+        client_secret = _form_field(form_data, "client_secret")
+        requested_scope = _form_field(form_data, "scope") or "mcp:read"
+
+        if not client_id or not client_secret:
+            error = OAuthError(
+                error="invalid_request",
+                description="client_id and client_secret are required",
+                status_code=400,
+            )
+            return JSONResponse(status_code=error.status_code, content=error.as_response())
+
+        if not oauth_token_store.is_valid_client_credentials(
+            client_id=client_id,
+            client_secret=client_secret,
+        ):
+            error = OAuthError(
+                error="invalid_client",
+                description="client credentials are invalid",
+                status_code=401,
+            )
+            return JSONResponse(status_code=error.status_code, content=error.as_response())
+
+        try:
+            validate_scope(requested_scope)
+        except OAuthError as exc:
+            return JSONResponse(status_code=exc.status_code, content=exc.as_response())
+
+        access_token = oauth_token_store.issue_access_token(
+            client_id=client_id,
+            scope=requested_scope,
+            grant_type=CLIENT_CREDENTIALS_GRANT_TYPE,
+        )
+        return JSONResponse(
+            status_code=200,
+            content={
+                "access_token": access_token.access_token,
+                "token_type": access_token.token_type,
+                "expires_in": ACCESS_TOKEN_TTL_SECONDS,
+                "scope": access_token.scope,
+            },
+        )
+
+    error = OAuthError(
+        error="unsupported_grant_type",
+        description="grant_type must be authorization_code or client_credentials",
+        status_code=400,
     )
-    if code_record is None:
-        error = OAuthError(
-            error="invalid_grant",
-            description="authorization code is invalid",
-            status_code=400,
-        )
-        return JSONResponse(status_code=error.status_code, content=error.as_response())
-
-    if not verify_pkce_code_verifier(
-        code_verifier=code_verifier,
-        code_challenge=code_record.code_challenge,
-    ):
-        error = OAuthError(
-            error="invalid_grant",
-            description="code_verifier does not match code_challenge",
-            status_code=400,
-        )
-        return JSONResponse(status_code=error.status_code, content=error.as_response())
-
-    access_token = oauth_token_store.issue_access_token(
-        client_id=client_id,
-        scope=code_record.scope,
-    )
-    return JSONResponse(
-        status_code=200,
-        content={
-            "access_token": access_token.access_token,
-            "token_type": access_token.token_type,
-            "expires_in": ACCESS_TOKEN_TTL_SECONDS,
-            "scope": access_token.scope,
-        },
-    )
+    return JSONResponse(status_code=error.status_code, content=error.as_response())
 
 
 @router.post("/mcp/oauth-v2-auth-code")
@@ -238,7 +288,11 @@ async def oauth_v2_auth_code_endpoint(request: Request) -> Response:
     """Require an issued OAuth access token before handling MCP JSON-RPC."""
 
     try:
-        validate_access_token_header(request.headers.get("authorization"))
+        token_record = validate_access_token_header(request.headers.get("authorization"))
+        validate_access_token_grant_type(
+            token_record,
+            expected_grant_type=AUTHORIZATION_CODE_GRANT_TYPE,
+        )
     except BearerAuthError as exc:
         return JSONResponse(
             status_code=401,

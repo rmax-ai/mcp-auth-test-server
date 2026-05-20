@@ -29,8 +29,8 @@ async def test_oauth_authorization_server_metadata_document(client):
         "token_endpoint": "http://test/oauth/token",
         "registration_endpoint": "http://test/oauth/register",
         "response_types_supported": ["code"],
-        "grant_types_supported": ["authorization_code"],
-        "token_endpoint_auth_methods_supported": ["none"],
+        "grant_types_supported": ["authorization_code", "client_credentials"],
+        "token_endpoint_auth_methods_supported": ["none", "client_secret_post"],
         "code_challenge_methods_supported": ["S256"],
         "scopes_supported": ["mcp:read", "mcp:write"],
     }

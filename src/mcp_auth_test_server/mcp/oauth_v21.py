@@ -8,6 +8,10 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from mcp_auth_test_server.auth.bearer import BearerAuthError
+from mcp_auth_test_server.auth.dynamic_registration import (
+    validate_registered_authorization_client,
+    validate_registered_token_client,
+)
 from mcp_auth_test_server.auth.oauth import (
     AUTHORIZATION_CODE_GRANT_TYPE,
     OAuthError,
@@ -124,6 +128,14 @@ async def authorize(request: Request) -> Response:
         )
     except OAuthError as exc:
         return JSONResponse(status_code=exc.status_code, content=exc.as_response())
+    try:
+        validate_registered_authorization_client(
+            client_id=auth_request.client_id,
+            redirect_uri=auth_request.redirect_uri,
+            required_token_endpoint_auth_method="none",
+        )
+    except OAuthError as exc:
+        return JSONResponse(status_code=exc.status_code, content=exc.as_response())
 
     if request.query_params.get("auto_approve") == "true":
         record = oauth_token_store.issue_authorization_code(
@@ -181,6 +193,14 @@ async def authorize_consent(request: Request) -> Response:
         )
     except OAuthError as exc:
         return JSONResponse(status_code=exc.status_code, content=exc.as_response())
+    try:
+        validate_registered_authorization_client(
+            client_id=auth_request.client_id,
+            redirect_uri=auth_request.redirect_uri,
+            required_token_endpoint_auth_method="none",
+        )
+    except OAuthError as exc:
+        return JSONResponse(status_code=exc.status_code, content=exc.as_response())
 
     decision = _form_field(form_data, "decision")
     if decision != "approve":
@@ -222,6 +242,7 @@ async def token(request: Request) -> JSONResponse:
     code = _form_field(form_data, "code")
     redirect_uri = _form_field(form_data, "redirect_uri")
     client_id = _form_field(form_data, "client_id")
+    client_secret = _form_field(form_data, "client_secret")
     code_verifier = _form_field(form_data, "code_verifier")
     resource = _form_field(form_data, "resource")
     expected_resource = _oauth_v21_resource(request)
@@ -242,6 +263,15 @@ async def token(request: Request) -> JSONResponse:
             status_code=400,
         )
         return JSONResponse(status_code=error.status_code, content=error.as_response())
+    try:
+        validate_registered_token_client(
+            client_id=client_id,
+            grant_type=AUTHORIZATION_CODE_GRANT_TYPE,
+            client_secret=client_secret,
+            required_token_endpoint_auth_method="none",
+        )
+    except OAuthError as exc:
+        return JSONResponse(status_code=exc.status_code, content=exc.as_response())
 
     code_record = oauth_token_store.consume_authorization_code(
         code=code,

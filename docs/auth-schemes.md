@@ -75,7 +75,10 @@ Mock client:
 
 ## Dynamic Client Registration
 
-**Endpoint:** `/register`
+**Endpoint:** `/oauth/register`
 **Spec:** RFC 7591
 
-Client POSTs registration metadata to receive client_id (and optionally client_secret). Supports `token_endpoint_auth_method: none` for public clients.
+Client POSTs registration metadata to receive a `client_id` and, for confidential
+clients, a mock `client_secret`. Supports:
+- `token_endpoint_auth_method: none` for public authorization-code clients
+- `token_endpoint_auth_method: client_secret_post` for confidential client-credentials clients

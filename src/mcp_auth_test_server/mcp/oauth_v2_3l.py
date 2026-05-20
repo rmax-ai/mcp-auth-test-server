@@ -8,6 +8,10 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from mcp_auth_test_server.auth.bearer import BearerAuthError
+from mcp_auth_test_server.auth.dynamic_registration import (
+    validate_registered_authorization_client,
+    validate_registered_token_client,
+)
 from mcp_auth_test_server.auth.oauth import (
     AUTHORIZATION_CODE_GRANT_TYPE,
     CLIENT_CREDENTIALS_GRANT_TYPE,
@@ -94,6 +98,13 @@ async def authorize(request: Request) -> Response:
         auth_request = validate_authorization_request(dict(request.query_params))
     except OAuthError as exc:
         return JSONResponse(status_code=exc.status_code, content=exc.as_response())
+    try:
+        validate_registered_authorization_client(
+            client_id=auth_request.client_id,
+            redirect_uri=auth_request.redirect_uri,
+        )
+    except OAuthError as exc:
+        return JSONResponse(status_code=exc.status_code, content=exc.as_response())
 
     if request.query_params.get("auto_approve") == "true":
         record = oauth_token_store.issue_authorization_code(
@@ -145,6 +156,13 @@ async def authorize_consent(request: Request) -> Response:
         )
     except OAuthError as exc:
         return JSONResponse(status_code=exc.status_code, content=exc.as_response())
+    try:
+        validate_registered_authorization_client(
+            client_id=auth_request.client_id,
+            redirect_uri=auth_request.redirect_uri,
+        )
+    except OAuthError as exc:
+        return JSONResponse(status_code=exc.status_code, content=exc.as_response())
 
     decision = _form_field(form_data, "decision")
     if decision != "approve":
@@ -182,6 +200,7 @@ async def token(request: Request) -> JSONResponse:
     form_data = parse_qs((await request.body()).decode("utf-8"), keep_blank_values=True)
     grant_type = _form_field(form_data, "grant_type")
     client_id = _form_field(form_data, "client_id")
+    client_secret = _form_field(form_data, "client_secret")
 
     if grant_type == AUTHORIZATION_CODE_GRANT_TYPE:
         code = _form_field(form_data, "code")
@@ -195,6 +214,14 @@ async def token(request: Request) -> JSONResponse:
                 status_code=400,
             )
             return JSONResponse(status_code=error.status_code, content=error.as_response())
+        try:
+            validate_registered_token_client(
+                client_id=client_id,
+                grant_type=AUTHORIZATION_CODE_GRANT_TYPE,
+                client_secret=client_secret,
+            )
+        except OAuthError as exc:
+            return JSONResponse(status_code=exc.status_code, content=exc.as_response())
 
         code_record = oauth_token_store.consume_authorization_code(
             code=code,
@@ -236,7 +263,6 @@ async def token(request: Request) -> JSONResponse:
         )
 
     if grant_type == CLIENT_CREDENTIALS_GRANT_TYPE:
-        client_secret = _form_field(form_data, "client_secret")
         requested_scope = _form_field(form_data, "scope") or "mcp:read"
 
         if not client_id or not client_secret:
@@ -247,16 +273,14 @@ async def token(request: Request) -> JSONResponse:
             )
             return JSONResponse(status_code=error.status_code, content=error.as_response())
 
-        if not oauth_token_store.is_valid_client_credentials(
-            client_id=client_id,
-            client_secret=client_secret,
-        ):
-            error = OAuthError(
-                error="invalid_client",
-                description="client credentials are invalid",
-                status_code=401,
+        try:
+            validate_registered_token_client(
+                client_id=client_id,
+                grant_type=CLIENT_CREDENTIALS_GRANT_TYPE,
+                client_secret=client_secret,
             )
-            return JSONResponse(status_code=error.status_code, content=error.as_response())
+        except OAuthError as exc:
+            return JSONResponse(status_code=exc.status_code, content=exc.as_response())
 
         try:
             validate_scope(requested_scope)

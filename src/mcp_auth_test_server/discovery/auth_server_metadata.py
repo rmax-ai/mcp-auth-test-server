@@ -18,7 +18,7 @@ router = APIRouter()
 
 
 def build_auth_server_metadata(request: Request) -> dict[str, object]:
-    """Return mock authorization server metadata for future OAuth phases."""
+    """Return authorization server metadata for the mock OAuth test flow."""
 
     return {
         "issuer": get_origin_url(request),
@@ -32,12 +32,8 @@ def build_auth_server_metadata(request: Request) -> dict[str, object]:
             MOCK_REGISTRATION_ENDPOINT_PATH,
         ),
         "response_types_supported": ["code"],
-        "grant_types_supported": ["authorization_code", "client_credentials"],
-        "token_endpoint_auth_methods_supported": [
-            "client_secret_basic",
-            "client_secret_post",
-            "none",
-        ],
+        "grant_types_supported": ["authorization_code"],
+        "token_endpoint_auth_methods_supported": ["none"],
         "code_challenge_methods_supported": ["S256"],
         "scopes_supported": MOCK_SCOPES,
     }
@@ -47,6 +43,6 @@ def build_auth_server_metadata(request: Request) -> dict[str, object]:
 async def oauth_authorization_server_metadata(
     request: Request,
 ) -> dict[str, object]:
-    """Expose mock authorization server metadata for RFC 8414 discovery."""
+    """Expose authorization server metadata for RFC 8414 discovery."""
 
     return build_auth_server_metadata(request)

@@ -4,14 +4,17 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from mcp_auth_test_server.app import app
+from mcp_auth_test_server.auth.oauth_v1 import oauth_v1_nonce_store
 from mcp_auth_test_server.auth.token_store import oauth_token_store
 
 
 @pytest_asyncio.fixture(autouse=True)
 async def reset_oauth_state():
     oauth_token_store.reset()
+    oauth_v1_nonce_store.reset()
     yield
     oauth_token_store.reset()
+    oauth_v1_nonce_store.reset()
 
 
 @pytest_asyncio.fixture

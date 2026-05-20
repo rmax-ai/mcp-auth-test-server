@@ -20,6 +20,9 @@ Static bearer token via `Authorization: Bearer <token>` header. Returns 401 with
 **Spec:** RFC 5849
 
 HMAC-SHA1 signature-based authentication. Consumer key/secret pair verified against request signature.
+Mock credentials:
+- `consumer_key=phase-8-consumer-key`
+- `consumer_secret=phase-8-consumer-secret`
 
 ## OAuth 2.0 Authorization Code + PKCE (3-legged)
 

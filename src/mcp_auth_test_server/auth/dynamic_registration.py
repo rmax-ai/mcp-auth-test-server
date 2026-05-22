@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from mcp_auth_test_server.auth.oauth import (
     AUTHORIZATION_CODE_GRANT_TYPE,
     CLIENT_CREDENTIALS_GRANT_TYPE,
+    REFRESH_TOKEN_GRANT_TYPE,
     OAuthError,
     validate_scope,
 )
@@ -17,7 +18,11 @@ from mcp_auth_test_server.auth.token_store import ClientRecord, oauth_token_stor
 from mcp_auth_test_server.discovery import MOCK_REGISTRATION_ENDPOINT_PATH
 
 SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS = {"none", "client_secret_post"}
-SUPPORTED_GRANT_TYPES = {AUTHORIZATION_CODE_GRANT_TYPE, CLIENT_CREDENTIALS_GRANT_TYPE}
+SUPPORTED_GRANT_TYPES = {
+    AUTHORIZATION_CODE_GRANT_TYPE,
+    CLIENT_CREDENTIALS_GRANT_TYPE,
+    REFRESH_TOKEN_GRANT_TYPE,
+}
 SUPPORTED_RESPONSE_TYPES = {"code"}
 
 router = APIRouter()
@@ -70,6 +75,15 @@ def register_dynamic_client(payload: dict[str, object]) -> ClientRecord:
         raise OAuthError(
             error="invalid_client_metadata",
             description=f"unsupported grant_types: {', '.join(unsupported_grants)}",
+            status_code=400,
+        )
+    if (
+        REFRESH_TOKEN_GRANT_TYPE in grant_types
+        and AUTHORIZATION_CODE_GRANT_TYPE not in grant_types
+    ):
+        raise OAuthError(
+            error="invalid_client_metadata",
+            description="refresh_token requires authorization_code",
             status_code=400,
         )
 

@@ -14,6 +14,7 @@ from mcp_auth_test_server.discovery import MOCK_SCOPES
 DEFAULT_OAUTH_SCOPE = MOCK_SCOPES[0]
 AUTHORIZATION_CODE_GRANT_TYPE = "authorization_code"
 CLIENT_CREDENTIALS_GRANT_TYPE = "client_credentials"
+REFRESH_TOKEN_GRANT_TYPE = "refresh_token"
 
 
 class OAuthError(Exception):

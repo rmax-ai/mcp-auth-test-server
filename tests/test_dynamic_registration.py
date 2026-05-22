@@ -110,6 +110,37 @@ async def test_register_confidential_client_supports_client_credentials_flow(cli
 
 
 @pytest.mark.asyncio
+async def test_register_public_client_can_request_refresh_token_support(client):
+    registration = await client.post(
+        "/oauth/register",
+        json={
+            "client_name": "Phase 9 Refresh Client",
+            "redirect_uris": ["https://client.example/phase-9/refresh/callback"],
+            "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"],
+            "scope": "mcp:read",
+        },
+    )
+
+    assert registration.status_code == 201
+    assert registration.json()["grant_types"] == ["authorization_code", "refresh_token"]
+
+
+@pytest.mark.asyncio
+async def test_registration_rejects_refresh_token_without_authorization_code(client):
+    response = await client.post(
+        "/oauth/register",
+        json={"grant_types": ["refresh_token"]},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "error": "invalid_client_metadata",
+        "error_description": "refresh_token requires authorization_code",
+    }
+
+
+@pytest.mark.asyncio
 async def test_register_public_client_supports_oauth_v21_flow(client):
     registration = await client.post(
         "/oauth/register",

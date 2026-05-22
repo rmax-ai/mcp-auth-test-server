@@ -1,4 +1,4 @@
-"""In-memory storage for mock OAuth clients, authorization codes, and access tokens."""
+"""In-memory storage for mock OAuth clients, authorization codes, and tokens."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from secrets import compare_digest, token_urlsafe
 
 AUTHORIZATION_CODE_TTL_SECONDS = 300
 ACCESS_TOKEN_TTL_SECONDS = 3600
+REFRESH_TOKEN_TTL_SECONDS = 2592000
 
 
 @dataclass(slots=True)
@@ -54,6 +55,19 @@ class AccessTokenRecord:
     token_type: str = "Bearer"
 
 
+@dataclass(slots=True)
+class RefreshTokenRecord:
+    """Refresh token metadata for minting additional access tokens."""
+
+    refresh_token: str
+    client_id: str
+    scope: str
+    grant_type: str
+    audience: str | None
+    issuer: str | None
+    expires_at: datetime
+
+
 class OAuthTokenStore:
     """Simple in-memory store for OAuth state."""
 
@@ -61,6 +75,7 @@ class OAuthTokenStore:
         self._clients: dict[str, ClientRecord] = {}
         self._authorization_codes: dict[str, AuthorizationCodeRecord] = {}
         self._access_tokens: dict[str, AccessTokenRecord] = {}
+        self._refresh_tokens: dict[str, RefreshTokenRecord] = {}
         self._seed_mock_clients()
 
     def reset(self) -> None:
@@ -69,6 +84,7 @@ class OAuthTokenStore:
         self._clients.clear()
         self._authorization_codes.clear()
         self._access_tokens.clear()
+        self._refresh_tokens.clear()
         self._seed_mock_clients()
 
     def register_client(
@@ -219,6 +235,40 @@ class OAuthTokenStore:
             return None
         return record
 
+    def issue_refresh_token(
+        self,
+        *,
+        client_id: str,
+        scope: str,
+        grant_type: str,
+        audience: str | None = None,
+        issuer: str | None = None,
+    ) -> RefreshTokenRecord:
+        """Create and persist a bearer refresh token."""
+
+        record = RefreshTokenRecord(
+            refresh_token=token_urlsafe(32),
+            client_id=client_id,
+            scope=scope,
+            grant_type=grant_type,
+            audience=audience,
+            issuer=issuer,
+            expires_at=self._now() + timedelta(seconds=REFRESH_TOKEN_TTL_SECONDS),
+        )
+        self._refresh_tokens[record.refresh_token] = record
+        return record
+
+    def get_refresh_token(self, token: str) -> RefreshTokenRecord | None:
+        """Return a refresh token if it exists and has not expired."""
+
+        record = self._refresh_tokens.get(token)
+        if record is None:
+            return None
+        if record.expires_at < self._now():
+            self._refresh_tokens.pop(token, None)
+            return None
+        return record
+
     @staticmethod
     def _now() -> datetime:
         return datetime.now(tz=UTC)
@@ -229,7 +279,7 @@ class OAuthTokenStore:
         self.add_client(
             client_id="phase-5-public-client",
             token_endpoint_auth_method="none",
-            grant_types=["authorization_code"],
+            grant_types=["authorization_code", "refresh_token"],
             response_types=["code"],
             redirect_uris=["https://client.example/callback"],
             scope="mcp:read",
@@ -248,7 +298,7 @@ class OAuthTokenStore:
         self.add_client(
             client_id="phase-7-public-client",
             token_endpoint_auth_method="none",
-            grant_types=["authorization_code"],
+            grant_types=["authorization_code", "refresh_token"],
             response_types=["code"],
             redirect_uris=["https://client.example/oauth-v21/callback"],
             scope="mcp:read",

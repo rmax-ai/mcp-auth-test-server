@@ -15,6 +15,7 @@ from mcp_auth_test_server.auth.dynamic_registration import (
 from mcp_auth_test_server.auth.oauth import (
     AUTHORIZATION_CODE_GRANT_TYPE,
     CLIENT_CREDENTIALS_GRANT_TYPE,
+    REFRESH_TOKEN_GRANT_TYPE,
     OAuthError,
     build_redirect_uri,
     validate_access_token_grant_type,
@@ -48,6 +49,23 @@ def _form_field(form_data: dict[str, list[str]], name: str) -> str | None:
     if not values:
         return None
     return values[0]
+
+
+def _token_response(
+    *,
+    access_token: str,
+    scope: str,
+    refresh_token: str | None = None,
+) -> dict[str, object]:
+    response: dict[str, object] = {
+        "access_token": access_token,
+        "token_type": "Bearer",
+        "expires_in": ACCESS_TOKEN_TTL_SECONDS,
+        "scope": scope,
+    }
+    if refresh_token is not None:
+        response["refresh_token"] = refresh_token
+    return response
 
 
 def _render_consent_page(
@@ -215,7 +233,7 @@ async def token(request: Request) -> JSONResponse:
             )
             return JSONResponse(status_code=error.status_code, content=error.as_response())
         try:
-            validate_registered_token_client(
+            client = validate_registered_token_client(
                 client_id=client_id,
                 grant_type=AUTHORIZATION_CODE_GRANT_TYPE,
                 client_secret=client_secret,
@@ -252,14 +270,66 @@ async def token(request: Request) -> JSONResponse:
             scope=code_record.scope,
             grant_type=AUTHORIZATION_CODE_GRANT_TYPE,
         )
+        refresh_token = None
+        if REFRESH_TOKEN_GRANT_TYPE in client.grant_types:
+            refresh_token = oauth_token_store.issue_refresh_token(
+                client_id=client_id,
+                scope=code_record.scope,
+                grant_type=AUTHORIZATION_CODE_GRANT_TYPE,
+            )
         return JSONResponse(
             status_code=200,
-            content={
-                "access_token": access_token.access_token,
-                "token_type": access_token.token_type,
-                "expires_in": ACCESS_TOKEN_TTL_SECONDS,
-                "scope": access_token.scope,
-            },
+            content=_token_response(
+                access_token=access_token.access_token,
+                scope=access_token.scope,
+                refresh_token=(
+                    refresh_token.refresh_token if refresh_token is not None else None
+                ),
+            ),
+        )
+
+    if grant_type == REFRESH_TOKEN_GRANT_TYPE:
+        refresh_token = _form_field(form_data, "refresh_token")
+
+        if not refresh_token or not client_id:
+            error = OAuthError(
+                error="invalid_request",
+                description="refresh_token and client_id are required",
+                status_code=400,
+            )
+            return JSONResponse(status_code=error.status_code, content=error.as_response())
+        try:
+            validate_registered_token_client(
+                client_id=client_id,
+                grant_type=REFRESH_TOKEN_GRANT_TYPE,
+                client_secret=client_secret,
+            )
+        except OAuthError as exc:
+            return JSONResponse(status_code=exc.status_code, content=exc.as_response())
+
+        refresh_record = oauth_token_store.get_refresh_token(refresh_token)
+        if refresh_record is None or refresh_record.client_id != client_id:
+            error = OAuthError(
+                error="invalid_grant",
+                description="refresh_token is invalid",
+                status_code=400,
+            )
+            return JSONResponse(status_code=error.status_code, content=error.as_response())
+
+        access_token = oauth_token_store.issue_access_token(
+            client_id=client_id,
+            scope=refresh_record.scope,
+            grant_type=refresh_record.grant_type,
+            audience=refresh_record.audience,
+            issuer=refresh_record.issuer,
+        )
+        return JSONResponse(
+            status_code=200,
+            content=_token_response(
+                access_token=access_token.access_token,
+                scope=access_token.scope,
+                refresh_token=refresh_record.refresh_token,
+            ),
         )
 
     if grant_type == CLIENT_CREDENTIALS_GRANT_TYPE:
@@ -304,7 +374,7 @@ async def token(request: Request) -> JSONResponse:
 
     error = OAuthError(
         error="unsupported_grant_type",
-        description="grant_type must be authorization_code or client_credentials",
+        description="grant_type must be authorization_code, refresh_token, or client_credentials",
         status_code=400,
     )
     return JSONResponse(status_code=error.status_code, content=error.as_response())

@@ -156,6 +156,7 @@ async def test_full_oauth_v21_flow_allows_mcp_access(client):
     assert token_body["scope"] == "mcp:read"
     assert token_body["aud"] == _oauth_v21_resource()
     assert token_body["iss"] == "http://test"
+    assert "refresh_token" in token_body
 
     mcp_response = await client.post(
         "/mcp/oauth-v21",
@@ -167,6 +168,53 @@ async def test_full_oauth_v21_flow_allows_mcp_access(client):
     body = mcp_response.json()
     assert body["result"]["serverInfo"]["name"] == "mcp-auth-test-server"
     assert "OAuth 2.1 bearer token" in body["result"]["instructions"]
+
+
+@pytest.mark.asyncio
+async def test_refresh_token_exchange_preserves_oauth_v21_resource_access(client):
+    verifier = "phase-7-refresh-flow-verifier"
+    authorize_response = await client.get(
+        "/oauth-v21/authorize",
+        params={**_authorization_params(code_verifier=verifier), "auto_approve": "true"},
+        follow_redirects=False,
+    )
+    authorization_code = _redirect_query(authorize_response.headers["location"])["code"][0]
+
+    token_response = await client.post(
+        "/oauth-v21/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": authorization_code,
+            "redirect_uri": "https://client.example/oauth-v21/callback",
+            "client_id": "phase-7-public-client",
+            "code_verifier": verifier,
+            "resource": _oauth_v21_resource(),
+        },
+    )
+    refresh_token = token_response.json()["refresh_token"]
+
+    refreshed = await client.post(
+        "/oauth-v21/token",
+        data={
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+            "client_id": "phase-7-public-client",
+        },
+    )
+
+    assert refreshed.status_code == 200
+    refreshed_body = refreshed.json()
+    assert refreshed_body["aud"] == _oauth_v21_resource()
+    assert refreshed_body["iss"] == "http://test"
+    assert refreshed_body["refresh_token"] == refresh_token
+
+    mcp_response = await client.post(
+        "/mcp/oauth-v21",
+        headers={"Authorization": f"Bearer {refreshed_body['access_token']}"},
+        json={"jsonrpc": "2.0", "id": "refresh-oauth-v21", "method": "initialize", "params": {}},
+    )
+
+    assert mcp_response.status_code == 200
 
 
 @pytest.mark.asyncio

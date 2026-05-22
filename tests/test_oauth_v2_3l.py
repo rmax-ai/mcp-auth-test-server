@@ -113,6 +113,53 @@ async def test_full_auth_code_pkce_flow_allows_mcp_access(client):
     body = mcp_response.json()
     assert body["result"]["serverInfo"]["name"] == "mcp-auth-test-server"
     assert "authorization code + PKCE" in body["result"]["instructions"]
+    assert "refresh_token" in token_body
+
+
+@pytest.mark.asyncio
+async def test_refresh_token_exchange_allows_mcp_access(client):
+    verifier = "phase-5-refresh-flow-verifier"
+
+    authorize_response = await client.get(
+        "/oauth/authorize",
+        params={**_authorization_params(code_verifier=verifier), "auto_approve": "true"},
+        follow_redirects=False,
+    )
+    authorization_code = _redirect_query(authorize_response.headers["location"])["code"][0]
+
+    token_response = await client.post(
+        "/oauth/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": authorization_code,
+            "redirect_uri": "https://client.example/callback",
+            "client_id": "phase-5-public-client",
+            "code_verifier": verifier,
+        },
+    )
+    refresh_token = token_response.json()["refresh_token"]
+
+    refreshed = await client.post(
+        "/oauth/token",
+        data={
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+            "client_id": "phase-5-public-client",
+        },
+    )
+
+    assert refreshed.status_code == 200
+    refreshed_body = refreshed.json()
+    assert refreshed_body["scope"] == "mcp:read"
+    assert refreshed_body["refresh_token"] == refresh_token
+
+    mcp_response = await client.post(
+        "/mcp/oauth-v2-auth-code",
+        headers={"Authorization": f"Bearer {refreshed_body['access_token']}"},
+        json={"jsonrpc": "2.0", "id": "refresh-oauth", "method": "initialize", "params": {}},
+    )
+
+    assert mcp_response.status_code == 200
 
 
 @pytest.mark.asyncio

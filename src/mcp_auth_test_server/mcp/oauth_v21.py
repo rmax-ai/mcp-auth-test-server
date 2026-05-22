@@ -14,6 +14,7 @@ from mcp_auth_test_server.auth.dynamic_registration import (
 )
 from mcp_auth_test_server.auth.oauth import (
     AUTHORIZATION_CODE_GRANT_TYPE,
+    REFRESH_TOKEN_GRANT_TYPE,
     OAuthError,
     build_redirect_uri,
     validate_access_token_audience,
@@ -24,6 +25,7 @@ from mcp_auth_test_server.auth.oauth import (
 )
 from mcp_auth_test_server.auth.oauth_v21 import (
     validate_oauth_v21_authorization_request,
+    validate_oauth_v21_refresh_resource,
     validate_oauth_v21_token_resource,
 )
 from mcp_auth_test_server.auth.token_store import (
@@ -58,6 +60,27 @@ def _form_field(form_data: dict[str, list[str]], name: str) -> str | None:
     if not values:
         return None
     return values[0]
+
+
+def _token_response(
+    *,
+    access_token: str,
+    scope: str,
+    audience: str,
+    issuer: str,
+    refresh_token: str | None = None,
+) -> dict[str, object]:
+    response: dict[str, object] = {
+        "access_token": access_token,
+        "token_type": "Bearer",
+        "expires_in": ACCESS_TOKEN_TTL_SECONDS,
+        "scope": scope,
+        "aud": audience,
+        "iss": issuer,
+    }
+    if refresh_token is not None:
+        response["refresh_token"] = refresh_token
+    return response
 
 
 def _render_consent_page(
@@ -239,91 +262,158 @@ async def token(request: Request) -> JSONResponse:
 
     form_data = parse_qs((await request.body()).decode("utf-8"), keep_blank_values=True)
     grant_type = _form_field(form_data, "grant_type")
-    code = _form_field(form_data, "code")
-    redirect_uri = _form_field(form_data, "redirect_uri")
     client_id = _form_field(form_data, "client_id")
     client_secret = _form_field(form_data, "client_secret")
-    code_verifier = _form_field(form_data, "code_verifier")
     resource = _form_field(form_data, "resource")
     expected_resource = _oauth_v21_resource(request)
     issuer = get_origin_url(request)
 
-    if grant_type != AUTHORIZATION_CODE_GRANT_TYPE:
-        error = OAuthError(
-            error="unsupported_grant_type",
-            description="grant_type must be authorization_code",
-            status_code=400,
-        )
-        return JSONResponse(status_code=error.status_code, content=error.as_response())
+    if grant_type == AUTHORIZATION_CODE_GRANT_TYPE:
+        code = _form_field(form_data, "code")
+        redirect_uri = _form_field(form_data, "redirect_uri")
+        code_verifier = _form_field(form_data, "code_verifier")
 
-    if not code or not redirect_uri or not client_id or not code_verifier:
-        error = OAuthError(
-            error="invalid_request",
-            description="code, redirect_uri, client_id, and code_verifier are required",
-            status_code=400,
-        )
-        return JSONResponse(status_code=error.status_code, content=error.as_response())
-    try:
-        validate_registered_token_client(
+        if not code or not redirect_uri or not client_id or not code_verifier:
+            error = OAuthError(
+                error="invalid_request",
+                description="code, redirect_uri, client_id, and code_verifier are required",
+                status_code=400,
+            )
+            return JSONResponse(status_code=error.status_code, content=error.as_response())
+        try:
+            client = validate_registered_token_client(
+                client_id=client_id,
+                grant_type=AUTHORIZATION_CODE_GRANT_TYPE,
+                client_secret=client_secret,
+                required_token_endpoint_auth_method="none",
+            )
+        except OAuthError as exc:
+            return JSONResponse(status_code=exc.status_code, content=exc.as_response())
+
+        code_record = oauth_token_store.consume_authorization_code(
+            code=code,
             client_id=client_id,
+            redirect_uri=redirect_uri,
+        )
+        if code_record is None:
+            error = OAuthError(
+                error="invalid_grant",
+                description="authorization code is invalid",
+                status_code=400,
+            )
+            return JSONResponse(status_code=error.status_code, content=error.as_response())
+
+        try:
+            validated_resource = validate_oauth_v21_token_resource(
+                resource=resource,
+                expected_resource=expected_resource,
+                authorized_resource=code_record.resource,
+            )
+        except OAuthError as exc:
+            return JSONResponse(status_code=exc.status_code, content=exc.as_response())
+
+        if not verify_pkce_code_verifier(
+            code_verifier=code_verifier,
+            code_challenge=code_record.code_challenge,
+        ):
+            error = OAuthError(
+                error="invalid_grant",
+                description="code_verifier does not match code_challenge",
+                status_code=400,
+            )
+            return JSONResponse(status_code=error.status_code, content=error.as_response())
+
+        access_token = oauth_token_store.issue_access_token(
+            client_id=client_id,
+            scope=code_record.scope,
             grant_type=AUTHORIZATION_CODE_GRANT_TYPE,
-            client_secret=client_secret,
-            required_token_endpoint_auth_method="none",
+            audience=validated_resource,
+            issuer=issuer,
         )
-    except OAuthError as exc:
-        return JSONResponse(status_code=exc.status_code, content=exc.as_response())
+        refresh_token = None
+        if REFRESH_TOKEN_GRANT_TYPE in client.grant_types:
+            refresh_token = oauth_token_store.issue_refresh_token(
+                client_id=client_id,
+                scope=code_record.scope,
+                grant_type=AUTHORIZATION_CODE_GRANT_TYPE,
+                audience=validated_resource,
+                issuer=issuer,
+            )
+        return JSONResponse(
+            status_code=200,
+            content=_token_response(
+                access_token=access_token.access_token,
+                scope=access_token.scope,
+                audience=validated_resource,
+                issuer=issuer,
+                refresh_token=(
+                    refresh_token.refresh_token if refresh_token is not None else None
+                ),
+            ),
+        )
 
-    code_record = oauth_token_store.consume_authorization_code(
-        code=code,
-        client_id=client_id,
-        redirect_uri=redirect_uri,
+    if grant_type == REFRESH_TOKEN_GRANT_TYPE:
+        refresh_token = _form_field(form_data, "refresh_token")
+
+        if not refresh_token or not client_id:
+            error = OAuthError(
+                error="invalid_request",
+                description="refresh_token and client_id are required",
+                status_code=400,
+            )
+            return JSONResponse(status_code=error.status_code, content=error.as_response())
+        try:
+            validate_registered_token_client(
+                client_id=client_id,
+                grant_type=REFRESH_TOKEN_GRANT_TYPE,
+                client_secret=client_secret,
+                required_token_endpoint_auth_method="none",
+            )
+        except OAuthError as exc:
+            return JSONResponse(status_code=exc.status_code, content=exc.as_response())
+
+        refresh_record = oauth_token_store.get_refresh_token(refresh_token)
+        if refresh_record is None or refresh_record.client_id != client_id:
+            error = OAuthError(
+                error="invalid_grant",
+                description="refresh_token is invalid",
+                status_code=400,
+            )
+            return JSONResponse(status_code=error.status_code, content=error.as_response())
+
+        try:
+            validated_resource = validate_oauth_v21_refresh_resource(
+                resource=resource,
+                expected_resource=expected_resource,
+                authorized_resource=refresh_record.audience or expected_resource,
+            )
+        except OAuthError as exc:
+            return JSONResponse(status_code=exc.status_code, content=exc.as_response())
+
+        access_token = oauth_token_store.issue_access_token(
+            client_id=client_id,
+            scope=refresh_record.scope,
+            grant_type=refresh_record.grant_type,
+            audience=validated_resource,
+            issuer=refresh_record.issuer or issuer,
+        )
+        return JSONResponse(
+            status_code=200,
+            content=_token_response(
+                access_token=access_token.access_token,
+                scope=access_token.scope,
+                audience=validated_resource,
+                issuer=access_token.issuer or issuer,
+                refresh_token=refresh_record.refresh_token,
+            ),
+        )
+
+    error = OAuthError(
+        error="unsupported_grant_type",
+        description="grant_type must be authorization_code or refresh_token",
+        status_code=400,
     )
-    if code_record is None:
-        error = OAuthError(
-            error="invalid_grant",
-            description="authorization code is invalid",
-            status_code=400,
-        )
-        return JSONResponse(status_code=error.status_code, content=error.as_response())
-
-    try:
-        validated_resource = validate_oauth_v21_token_resource(
-            resource=resource,
-            expected_resource=expected_resource,
-            authorized_resource=code_record.resource,
-        )
-    except OAuthError as exc:
-        return JSONResponse(status_code=exc.status_code, content=exc.as_response())
-
-    if not verify_pkce_code_verifier(
-        code_verifier=code_verifier,
-        code_challenge=code_record.code_challenge,
-    ):
-        error = OAuthError(
-            error="invalid_grant",
-            description="code_verifier does not match code_challenge",
-            status_code=400,
-        )
-        return JSONResponse(status_code=error.status_code, content=error.as_response())
-
-    access_token = oauth_token_store.issue_access_token(
-        client_id=client_id,
-        scope=code_record.scope,
-        grant_type=AUTHORIZATION_CODE_GRANT_TYPE,
-        audience=validated_resource,
-        issuer=issuer,
-    )
-    return JSONResponse(
-        status_code=200,
-        content={
-            "access_token": access_token.access_token,
-            "token_type": access_token.token_type,
-            "expires_in": ACCESS_TOKEN_TTL_SECONDS,
-            "scope": access_token.scope,
-            "aud": validated_resource,
-            "iss": issuer,
-        },
-    )
+    return JSONResponse(status_code=error.status_code, content=error.as_response())
 
 
 @router.post("/mcp/oauth-v21")

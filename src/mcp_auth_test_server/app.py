@@ -1,6 +1,11 @@
 """FastAPI application for MCP Auth Test Server."""
 
 from fastapi import FastAPI
+from fastapi.openapi.docs import (
+    get_redoc_html,
+    get_swagger_ui_html,
+    get_swagger_ui_oauth2_redirect_html,
+)
 
 from mcp_auth_test_server.auth.dynamic_registration import (
     router as dynamic_registration_router,
@@ -22,6 +27,9 @@ app = FastAPI(
     title="MCP Auth Test Server",
     description="Test endpoints for MCP authentication schemes",
     version="0.1.0",
+    openapi_url="/openapi.json",
+    docs_url=None,
+    redoc_url=None,
 )
 
 app.include_router(no_auth_router)
@@ -38,3 +46,25 @@ app.include_router(auth_server_metadata_router)
 @app.get("/health")
 async def health():
     return {"status": "ok", "version": "0.1.0"}
+
+
+@app.get("/docs", include_in_schema=False)
+async def custom_swagger_ui_html():
+    return get_swagger_ui_html(
+        openapi_url=app.openapi_url or "/openapi.json",
+        title=f"{app.title} - Swagger UI",
+    )
+
+
+@app.get("/docs/oauth2-redirect", include_in_schema=False)
+async def swagger_ui_redirect():
+    return get_swagger_ui_oauth2_redirect_html()
+
+
+@app.get("/redoc", include_in_schema=False)
+async def redoc_html():
+    return get_redoc_html(
+        openapi_url=app.openapi_url or "/openapi.json",
+        title=f"{app.title} - ReDoc",
+        with_google_fonts=False,
+    )

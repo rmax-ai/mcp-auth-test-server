@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 
-from mcp_auth_test_server.mcp.base import BaseMCPHandler, JsonRpcError
+from mcp_auth_test_server.mcp.base import BaseMCPHandler, JsonRpcError, RequestAuditContext
 from mcp_auth_test_server.mcp.tools import get_core_tools
 
 router = APIRouter()
@@ -22,6 +22,14 @@ handler = BaseMCPHandler(
 async def no_auth_endpoint(request: Request) -> Response:
     """Accept all MCP requests without authentication."""
 
+    source_ip = request.client.host if request.client is not None else "-"
+    audit_context = RequestAuditContext(
+        endpoint="/mcp/no-auth",
+        auth_scheme="none",
+        caller="anonymous",
+        source_ip=source_ip,
+    )
+
     try:
         payload = await request.json()
     except ValueError as exc:
@@ -29,7 +37,10 @@ async def no_auth_endpoint(request: Request) -> Response:
         return JSONResponse(status_code=400, content=error.as_response(None))
 
     try:
-        status_code, response_payload = await handler.handle_message(payload)
+        status_code, response_payload = await handler.handle_message(
+            payload,
+            audit_context=audit_context,
+        )
     except JsonRpcError as exc:
         return JSONResponse(status_code=400, content=exc.as_response(payload.get("id")))
 

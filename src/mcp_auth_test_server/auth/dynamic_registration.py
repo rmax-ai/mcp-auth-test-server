@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from secrets import token_urlsafe
 
 from fastapi import APIRouter, Request
@@ -16,6 +17,8 @@ from mcp_auth_test_server.auth.oauth import (
 )
 from mcp_auth_test_server.auth.token_store import ClientRecord, oauth_token_store
 from mcp_auth_test_server.discovery import MOCK_REGISTRATION_ENDPOINT_PATH
+
+logger = logging.getLogger("mcp_auth_test_server.audit")
 
 SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS = {"none", "client_secret_post"}
 SUPPORTED_GRANT_TYPES = {
@@ -310,5 +313,17 @@ async def register_client(request: Request) -> JSONResponse:
         client = register_dynamic_client(payload)
     except OAuthError as exc:
         return JSONResponse(status_code=exc.status_code, content=exc.as_response())
+
+    logger.info(
+        "oauth client registered endpoint=%s client_id=%s client_name=%s auth_method=%s "
+        "grant_types=%s redirect_uri_count=%s scope=%s",
+        MOCK_REGISTRATION_ENDPOINT_PATH,
+        client.client_id,
+        client.client_name or "-",
+        client.token_endpoint_auth_method,
+        list(client.grant_types),
+        len(client.redirect_uris),
+        client.scope,
+    )
 
     return JSONResponse(status_code=201, content=registration_response(client))

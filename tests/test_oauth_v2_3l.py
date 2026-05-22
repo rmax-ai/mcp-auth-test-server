@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import logging
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -160,6 +161,59 @@ async def test_refresh_token_exchange_allows_mcp_access(client):
     )
 
     assert mcp_response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_oauth_tool_call_and_token_issuance_are_logged(client, caplog):
+    caplog.set_level(logging.INFO, logger="mcp_auth_test_server.audit")
+    verifier = "phase-5-log-verifier"
+
+    authorize_response = await client.get(
+        "/oauth/authorize",
+        params={**_authorization_params(code_verifier=verifier), "auto_approve": "true"},
+        follow_redirects=False,
+    )
+    authorization_code = _redirect_query(authorize_response.headers["location"])["code"][0]
+
+    token_response = await client.post(
+        "/oauth/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": authorization_code,
+            "redirect_uri": "https://client.example/callback",
+            "client_id": "phase-5-public-client",
+            "code_verifier": verifier,
+        },
+    )
+    access_token = token_response.json()["access_token"]
+
+    mcp_response = await client.post(
+        "/mcp/oauth-v2-auth-code",
+        headers={"Authorization": f"Bearer {access_token}"},
+        json={
+            "jsonrpc": "2.0",
+            "id": "oauth-log-1",
+            "method": "tools/call",
+            "params": {"name": "ping", "arguments": {}},
+        },
+    )
+
+    assert token_response.status_code == 200
+    assert mcp_response.status_code == 200
+    assert any(
+        "oauth token issued endpoint=/oauth/token client_id=phase-5-public-client "
+        "grant_type=authorization_code" in record.message
+        and "refresh_token_issued=True" in record.message
+        for record in caplog.records
+    )
+    assert any(
+        "mcp request endpoint=/mcp/oauth-v2-auth-code auth_scheme=oauth2 "
+        "caller=phase-5-public-client client_id=phase-5-public-client" in record.message
+        and "method=tools/call" in record.message
+        and "tool_name=ping" in record.message
+        and "grant_type=authorization_code" in record.message
+        for record in caplog.records
+    )
 
 
 @pytest.mark.asyncio

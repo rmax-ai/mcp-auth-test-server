@@ -1,5 +1,7 @@
 """Tests for the no-auth MCP endpoint."""
 
+import logging
+
 import pytest
 
 
@@ -90,6 +92,30 @@ async def test_ping_tool_returns_pong(client):
 
     assert response.status_code == 200
     assert response.json()["result"]["structuredContent"] == {"pong": True}
+
+
+@pytest.mark.asyncio
+async def test_tool_call_is_logged_with_request_context(client, caplog):
+    caplog.set_level(logging.INFO, logger="mcp_auth_test_server.audit")
+
+    response = await client.post(
+        "/mcp/no-auth",
+        json={
+            "jsonrpc": "2.0",
+            "id": "log-echo-1",
+            "method": "tools/call",
+            "params": {"name": "echo", "arguments": {"message": "hello", "count": 1}},
+        },
+    )
+
+    assert response.status_code == 200
+    assert any(
+        "mcp request endpoint=/mcp/no-auth auth_scheme=none caller=anonymous" in record.message
+        and "method=tools/call" in record.message
+        and "tool_name=echo" in record.message
+        and "argument_keys=['count', 'message']" in record.message
+        for record in caplog.records
+    )
 
 
 @pytest.mark.asyncio

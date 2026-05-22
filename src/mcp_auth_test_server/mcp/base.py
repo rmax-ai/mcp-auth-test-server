@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
 JsonObject = dict[str, Any]
 ToolHandler = Callable[[JsonObject], Awaitable[JsonObject]]
+
+logger = logging.getLogger("mcp_auth_test_server.audit")
 
 
 @dataclass(slots=True)
@@ -25,6 +28,21 @@ class ToolDefinition:
             "description": self.description,
             "inputSchema": self.input_schema,
         }
+
+
+@dataclass(slots=True)
+class RequestAuditContext:
+    """Audit context captured for an MCP request."""
+
+    endpoint: str
+    auth_scheme: str
+    caller: str
+    source_ip: str = "-"
+    client_id: str = "-"
+    scope: str = "-"
+    grant_type: str = "-"
+    audience: str = "-"
+    issuer: str = "-"
 
 
 class JsonRpcError(Exception):
@@ -61,23 +79,44 @@ class BaseMCPHandler:
         self.instructions = instructions
         self._tools = {tool.name: tool for tool in tools}
 
-    async def handle_message(self, payload: Any) -> tuple[int | None, JsonObject | None]:
+    async def handle_message(
+        self,
+        payload: Any,
+        *,
+        audit_context: RequestAuditContext | None = None,
+    ) -> tuple[int | None, JsonObject | None]:
         """Validate and dispatch a JSON-RPC request body."""
 
         if not isinstance(payload, dict):
             raise JsonRpcError(-32600, "Invalid Request")
 
         request_id = payload.get("id")
-        self._validate_request(payload)
+        try:
+            self._validate_request(payload)
 
-        method = payload["method"]
-        params = payload.get("params")
-        if params is None:
-            params = {}
-        if not isinstance(params, dict):
-            raise JsonRpcError(-32602, "Invalid params")
+            method = payload["method"]
+            params = payload.get("params")
+            if params is None:
+                params = {}
+            if not isinstance(params, dict):
+                raise JsonRpcError(-32602, "Invalid params")
 
-        result = await self._dispatch(method=method, params=params)
+            self._log_request(
+                audit_context=audit_context,
+                request_id=request_id,
+                method=method,
+                params=params,
+            )
+            result = await self._dispatch(method=method, params=params)
+        except JsonRpcError as exc:
+            self._log_error(
+                audit_context=audit_context,
+                request_id=request_id,
+                method=payload.get("method"),
+                error=exc,
+            )
+            raise
+
         if request_id is None:
             return None, None
         return 200, {"jsonrpc": "2.0", "id": request_id, "result": result}
@@ -141,3 +180,69 @@ class BaseMCPHandler:
             "structuredContent": structured_content,
             "isError": False,
         }
+
+    def _log_request(
+        self,
+        *,
+        audit_context: RequestAuditContext | None,
+        request_id: Any,
+        method: str,
+        params: JsonObject,
+    ) -> None:
+        context = audit_context or RequestAuditContext(
+            endpoint="-",
+            auth_scheme="unknown",
+            caller="unknown",
+        )
+        tool_name = params.get("name") if method == "tools/call" else "-"
+        argument_keys: list[str] = []
+        if method == "tools/call":
+            arguments = params.get("arguments", {})
+            if isinstance(arguments, dict):
+                argument_keys = sorted(str(key) for key in arguments)
+
+        logger.info(
+            "mcp request endpoint=%s auth_scheme=%s caller=%s client_id=%s source_ip=%s "
+            "request_id=%s method=%s tool_name=%s argument_keys=%s scope=%s "
+            "grant_type=%s audience=%s issuer=%s",
+            context.endpoint,
+            context.auth_scheme,
+            context.caller,
+            context.client_id,
+            context.source_ip,
+            request_id,
+            method,
+            tool_name,
+            argument_keys,
+            context.scope,
+            context.grant_type,
+            context.audience,
+            context.issuer,
+        )
+
+    def _log_error(
+        self,
+        *,
+        audit_context: RequestAuditContext | None,
+        request_id: Any,
+        method: Any,
+        error: JsonRpcError,
+    ) -> None:
+        context = audit_context or RequestAuditContext(
+            endpoint="-",
+            auth_scheme="unknown",
+            caller="unknown",
+        )
+        logger.warning(
+            "mcp request failed endpoint=%s auth_scheme=%s caller=%s client_id=%s "
+            "source_ip=%s request_id=%s method=%s error_code=%s error_message=%s",
+            context.endpoint,
+            context.auth_scheme,
+            context.caller,
+            context.client_id,
+            context.source_ip,
+            request_id,
+            method,
+            error.code,
+            error.message,
+        )

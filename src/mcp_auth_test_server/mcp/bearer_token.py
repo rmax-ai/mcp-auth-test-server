@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse, Response
 
 from mcp_auth_test_server.auth.bearer import BearerAuthError, validate_bearer_token_header
 from mcp_auth_test_server.discovery import PROTECTED_RESOURCE_METADATA_PATH, build_absolute_url
-from mcp_auth_test_server.mcp.base import BaseMCPHandler, JsonRpcError
+from mcp_auth_test_server.mcp.base import BaseMCPHandler, JsonRpcError, RequestAuditContext
 from mcp_auth_test_server.mcp.tools import get_core_tools
 
 router = APIRouter()
@@ -38,6 +38,14 @@ async def bearer_token_endpoint(request: Request) -> Response:
             },
         )
 
+    source_ip = request.client.host if request.client is not None else "-"
+    audit_context = RequestAuditContext(
+        endpoint="/mcp/bearer-token",
+        auth_scheme="bearer",
+        caller="static-bearer-token",
+        source_ip=source_ip,
+    )
+
     try:
         payload = await request.json()
     except ValueError as exc:
@@ -45,7 +53,10 @@ async def bearer_token_endpoint(request: Request) -> Response:
         return JSONResponse(status_code=400, content=error.as_response(None))
 
     try:
-        status_code, response_payload = await handler.handle_message(payload)
+        status_code, response_payload = await handler.handle_message(
+            payload,
+            audit_context=audit_context,
+        )
     except JsonRpcError as exc:
         return JSONResponse(status_code=400, content=exc.as_response(payload.get("id")))
 

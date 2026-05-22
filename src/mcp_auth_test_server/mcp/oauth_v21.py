@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Request
@@ -39,10 +40,11 @@ from mcp_auth_test_server.discovery import (
     build_discovery_url,
     get_origin_url,
 )
-from mcp_auth_test_server.mcp.base import BaseMCPHandler, JsonRpcError
+from mcp_auth_test_server.mcp.base import BaseMCPHandler, JsonRpcError, RequestAuditContext
 from mcp_auth_test_server.mcp.tools import get_core_tools
 
 router = APIRouter()
+logger = logging.getLogger("mcp_auth_test_server.audit")
 
 handler = BaseMCPHandler(
     server_name="mcp-auth-test-server",
@@ -339,6 +341,17 @@ async def token(request: Request) -> JSONResponse:
                 audience=validated_resource,
                 issuer=issuer,
             )
+        logger.info(
+            "oauth token issued endpoint=%s client_id=%s grant_type=%s scope=%s "
+            "audience=%s issuer=%s refresh_token_issued=%s",
+            "/oauth-v21/token",
+            client_id,
+            AUTHORIZATION_CODE_GRANT_TYPE,
+            access_token.scope,
+            validated_resource,
+            issuer,
+            refresh_token is not None,
+        )
         return JSONResponse(
             status_code=200,
             content=_token_response(
@@ -397,6 +410,17 @@ async def token(request: Request) -> JSONResponse:
             audience=validated_resource,
             issuer=refresh_record.issuer or issuer,
         )
+        logger.info(
+            "oauth token issued endpoint=%s client_id=%s grant_type=%s scope=%s "
+            "audience=%s issuer=%s refresh_token_issued=%s",
+            "/oauth-v21/token",
+            client_id,
+            REFRESH_TOKEN_GRANT_TYPE,
+            access_token.scope,
+            validated_resource,
+            access_token.issuer or issuer,
+            True,
+        )
         return JSONResponse(
             status_code=200,
             content=_token_response(
@@ -448,6 +472,19 @@ async def oauth_v21_endpoint(request: Request) -> Response:
             },
         )
 
+    source_ip = request.client.host if request.client is not None else "-"
+    audit_context = RequestAuditContext(
+        endpoint="/mcp/oauth-v21",
+        auth_scheme="oauth2.1",
+        caller=token_record.client_id,
+        source_ip=source_ip,
+        client_id=token_record.client_id,
+        scope=token_record.scope,
+        grant_type=token_record.grant_type,
+        audience=token_record.audience or "-",
+        issuer=token_record.issuer or "-",
+    )
+
     try:
         payload = await request.json()
     except ValueError as exc:
@@ -455,7 +492,10 @@ async def oauth_v21_endpoint(request: Request) -> Response:
         return JSONResponse(status_code=400, content=error.as_response(None))
 
     try:
-        status_code, response_payload = await handler.handle_message(payload)
+        status_code, response_payload = await handler.handle_message(
+            payload,
+            audit_context=audit_context,
+        )
     except JsonRpcError as exc:
         return JSONResponse(status_code=400, content=exc.as_response(payload.get("id")))
 

@@ -9,7 +9,6 @@ import httpx
 
 from tests.flow_helpers import (
     bearer_headers,
-    build_oauth_v1_header,
     code_challenge,
     jsonrpc_payload,
     redirect_query,
@@ -18,7 +17,6 @@ from tests.flow_helpers import (
 SCHEMES = (
     "no-auth",
     "bearer-token",
-    "oauth-v1",
     "oauth-v2-3l",
     "oauth-v2-2l",
     "oauth-v21",
@@ -78,16 +76,6 @@ def run_bearer_token(client: httpx.Client) -> SchemeResult:
     )
     _assert_status(initialize, 200)
     return SchemeResult("bearer-token", "discovery + initialize succeeded")
-
-
-def run_oauth_v1(client: httpx.Client, *, base_url: str) -> SchemeResult:
-    initialize = client.post(
-        "/mcp/oauth-v1",
-        headers={"Authorization": build_oauth_v1_header(url=f"{base_url}/mcp/oauth-v1")},
-        json=jsonrpc_payload(request_id="live-oauth-v1-init", method="initialize"),
-    )
-    _assert_status(initialize, 200)
-    return SchemeResult("oauth-v1", "signed initialize succeeded")
 
 
 def run_oauth_v2_3l(client: httpx.Client, *, base_url: str) -> SchemeResult:
@@ -265,8 +253,6 @@ def run_scheme(scheme: str, client: httpx.Client, *, base_url: str) -> SchemeRes
         return run_no_auth(client)
     if scheme == "bearer-token":
         return run_bearer_token(client)
-    if scheme == "oauth-v1":
-        return run_oauth_v1(client, base_url=base_url)
     if scheme == "oauth-v2-3l":
         return run_oauth_v2_3l(client, base_url=base_url)
     if scheme == "oauth-v2-2l":

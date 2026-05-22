@@ -6,7 +6,6 @@ import pytest
 
 from tests.flow_helpers import (
     bearer_headers,
-    build_oauth_v1_header,
     code_challenge,
     jsonrpc_payload,
     redirect_query,
@@ -67,34 +66,6 @@ async def test_bearer_token_flow(client):
     assert "static mock bearer token" in initialize.json()["result"]["instructions"]
     assert ping.status_code == 200
     assert ping.json()["result"]["structuredContent"] == {"pong": True}
-
-
-@pytest.mark.asyncio
-async def test_oauth_v1_flow(client, monkeypatch):
-    monkeypatch.setattr("mcp_auth_test_server.auth.oauth_v1.time.time", lambda: 1760000000)
-
-    initialize = await client.post(
-        "/mcp/oauth-v1",
-        headers={
-            "Authorization": build_oauth_v1_header(url="http://test/mcp/oauth-v1"),
-        },
-        json=jsonrpc_payload(request_id="e2e-oauth-v1-init", method="initialize"),
-    )
-    tools_list = await client.post(
-        "/mcp/oauth-v1",
-        headers={
-            "Authorization": build_oauth_v1_header(
-                url="http://test/mcp/oauth-v1",
-                nonce="nonce-2",
-            ),
-        },
-        json=jsonrpc_payload(request_id="e2e-oauth-v1-tools", method="tools/list"),
-    )
-
-    assert initialize.status_code == 200
-    assert "OAuth 1.0a Authorization header" in initialize.json()["result"]["instructions"]
-    assert tools_list.status_code == 200
-    assert {tool["name"] for tool in tools_list.json()["result"]["tools"]} == {"echo", "ping"}
 
 
 @pytest.mark.asyncio

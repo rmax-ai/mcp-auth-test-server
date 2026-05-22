@@ -91,6 +91,10 @@ class BaseMCPHandler:
     async def _dispatch(self, *, method: str, params: JsonObject) -> JsonObject:
         if method == "initialize":
             return self._handle_initialize()
+        if method == "notifications/initialized":
+            return {}
+        if method == "ping":
+            return {}
         if method == "tools/list":
             return self._handle_tools_list()
         if method == "tools/call":

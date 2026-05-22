@@ -84,6 +84,32 @@ async def test_unknown_method_returns_json_rpc_error(client):
 
 
 @pytest.mark.asyncio
+async def test_initialized_notification_is_accepted(client):
+    response = await client.post(
+        "/mcp/no-auth",
+        json={
+            "jsonrpc": "2.0",
+            "id": None,
+            "method": "notifications/initialized",
+            "params": {},
+        },
+    )
+
+    assert response.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_ping_request_returns_empty_result(client):
+    response = await client.post(
+        "/mcp/no-auth",
+        json={"jsonrpc": "2.0", "id": "ping-rpc", "method": "ping", "params": {}},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["result"] == {}
+
+
+@pytest.mark.asyncio
 async def test_invalid_request_returns_json_rpc_error(client):
     response = await client.post(
         "/mcp/no-auth",

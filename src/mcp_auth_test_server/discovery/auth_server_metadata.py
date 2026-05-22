@@ -16,8 +16,12 @@ from mcp_auth_test_server.discovery import (
     build_absolute_url,
     get_origin_url,
 )
+from mcp_auth_test_server.openapi_examples import (
+    AUTHORIZATION_SERVER_METADATA_PARAMETERS,
+    AUTHORIZATION_SERVER_METADATA_RESPONSES,
+)
 
-router = APIRouter()
+router = APIRouter(tags=["Discovery"])
 
 
 def build_auth_server_metadata(
@@ -67,7 +71,11 @@ def build_auth_server_metadata(
     }
 
 
-@router.get(AUTHORIZATION_SERVER_METADATA_PATH)
+@router.get(
+    AUTHORIZATION_SERVER_METADATA_PATH,
+    responses=AUTHORIZATION_SERVER_METADATA_RESPONSES,
+    openapi_extra={"parameters": AUTHORIZATION_SERVER_METADATA_PARAMETERS},
+)
 async def oauth_authorization_server_metadata(
     request: Request,
 ) -> dict[str, object]:

@@ -7,8 +7,9 @@ from fastapi.responses import JSONResponse, Response
 
 from mcp_auth_test_server.mcp.base import BaseMCPHandler, JsonRpcError, RequestAuditContext
 from mcp_auth_test_server.mcp.tools import get_core_tools
+from mcp_auth_test_server.openapi_examples import MCP_REQUEST_BODY, MCP_RESPONSES
 
-router = APIRouter()
+router = APIRouter(tags=["MCP: No Auth"])
 
 handler = BaseMCPHandler(
     server_name="mcp-auth-test-server",
@@ -18,7 +19,11 @@ handler = BaseMCPHandler(
 )
 
 
-@router.post("/mcp/no-auth")
+@router.post(
+    "/mcp/no-auth",
+    responses=MCP_RESPONSES,
+    openapi_extra=MCP_REQUEST_BODY,
+)
 async def no_auth_endpoint(request: Request) -> Response:
     """Accept all MCP requests without authentication."""
 

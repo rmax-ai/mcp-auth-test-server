@@ -5,12 +5,21 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 
-from mcp_auth_test_server.auth.bearer import BearerAuthError, validate_bearer_token_header
+from mcp_auth_test_server.auth.bearer import (
+    BearerAuthError,
+    mint_bearer_token,
+    validate_bearer_token_header,
+)
 from mcp_auth_test_server.discovery import PROTECTED_RESOURCE_METADATA_PATH, build_absolute_url
 from mcp_auth_test_server.mcp.base import BaseMCPHandler, JsonRpcError, RequestAuditContext
 from mcp_auth_test_server.mcp.tools import get_core_tools
+from mcp_auth_test_server.openapi_examples import (
+    MCP_REQUEST_BODY,
+    MCP_RESPONSES,
+    UNAUTHORIZED_RESPONSE,
+)
 
-router = APIRouter()
+router = APIRouter(tags=["MCP: Bearer Token"])
 
 handler = BaseMCPHandler(
     server_name="mcp-auth-test-server",
@@ -20,7 +29,24 @@ handler = BaseMCPHandler(
 )
 
 
-@router.post("/mcp/bearer-token")
+@router.post("/mcp/bearer-token/mint")
+async def mint_endpoint() -> JSONResponse:
+    """Mint a short-lived bearer token for the /mcp/bearer-token endpoint."""
+
+    return JSONResponse(status_code=200, content=mint_bearer_token())
+
+
+@router.post(
+    "/mcp/bearer-token",
+    responses={
+        **MCP_RESPONSES,
+        401: UNAUTHORIZED_RESPONSE,
+    },
+    openapi_extra={
+        **MCP_REQUEST_BODY,
+        "security": [{"MintedBearerToken": []}],
+    },
+)
 async def bearer_token_endpoint(request: Request) -> Response:
     """Require a static bearer token before handling MCP JSON-RPC."""
 

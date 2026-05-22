@@ -202,13 +202,15 @@ async def test_oauth_tool_call_and_token_issuance_are_logged(client, caplog):
     assert mcp_response.status_code == 200
     assert any(
         "oauth token issued endpoint=/oauth/token client_id=phase-5-public-client "
-        "grant_type=authorization_code" in record.message
+        "grant_type=authorization_code"
+        in record.message
         and "refresh_token_issued=True" in record.message
         for record in caplog.records
     )
     assert any(
         "mcp request endpoint=/mcp/oauth-v2-auth-code auth_scheme=oauth2 "
-        "caller=phase-5-public-client client_id=phase-5-public-client" in record.message
+        "caller=phase-5-public-client client_id=phase-5-public-client"
+        in record.message
         and "method=tools/call" in record.message
         and "tool_name=ping" in record.message
         and "grant_type=authorization_code" in record.message

@@ -8,10 +8,11 @@ async def test_oauth_protected_resource_metadata_document(client):
     response = await client.get("/.well-known/oauth-protected-resource")
 
     assert response.status_code == 200
-    assert response.json() == {
-        "resource": "http://test/mcp/bearer-token",
+    data = response.json()
+    assert data == {
+        "resource": "http://test/mcp/oauth-v21",
         "authorization_servers": [
-            "http://test/.well-known/oauth-authorization-server",
+            "http://test/.well-known/oauth-authorization-server?resource=http%3A%2F%2Ftest%2Fmcp%2Foauth-v21",
         ],
         "bearer_methods_supported": ["header"],
         "scopes_supported": ["mcp:read", "mcp:write"],

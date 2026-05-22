@@ -254,7 +254,7 @@ async def test_oauth_v21_mcp_endpoint_rejects_wrong_audience(client):
     }
     assert (
         'resource_metadata="http://test/.well-known/oauth-protected-resource?'
-        "resource=http%3A%2F%2Ftest%2Fmcp%2Foauth-v21\""
+        'resource=http%3A%2F%2Ftest%2Fmcp%2Foauth-v21"'
     ) in response.headers["WWW-Authenticate"]
 
 

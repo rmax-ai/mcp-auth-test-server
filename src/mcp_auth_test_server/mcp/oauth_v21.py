@@ -42,8 +42,19 @@ from mcp_auth_test_server.discovery import (
 )
 from mcp_auth_test_server.mcp.base import BaseMCPHandler, JsonRpcError, RequestAuditContext
 from mcp_auth_test_server.mcp.tools import get_core_tools
+from mcp_auth_test_server.openapi_examples import (
+    AUTHORIZE_CONSENT_V21_REQUEST_BODY,
+    AUTHORIZE_RESPONSES,
+    AUTHORIZE_V21_PARAMETERS,
+    MCP_REQUEST_BODY,
+    MCP_RESPONSES,
+    OAUTH_ERROR_RESPONSE,
+    TOKEN_RESPONSE_V21,
+    TOKEN_V21_REQUEST_BODY,
+    UNAUTHORIZED_RESPONSE,
+)
 
-router = APIRouter()
+router = APIRouter(tags=["OAuth 2.1"])
 logger = logging.getLogger("mcp_auth_test_server.audit")
 
 handler = BaseMCPHandler(
@@ -139,7 +150,11 @@ def _oauth_v21_resource_metadata_url(request: Request) -> str:
     )
 
 
-@router.get("/oauth-v21/authorize")
+@router.get(
+    "/oauth-v21/authorize",
+    responses=AUTHORIZE_RESPONSES,
+    openapi_extra={"parameters": AUTHORIZE_V21_PARAMETERS},
+)
 async def authorize(request: Request) -> Response:
     """Render mock consent for a valid OAuth 2.1 authorization request."""
 
@@ -194,7 +209,14 @@ async def authorize(request: Request) -> Response:
     )
 
 
-@router.post("/oauth-v21/authorize/consent")
+@router.post(
+    "/oauth-v21/authorize/consent",
+    responses={
+        302: {"description": "Redirect back to the client with either `code` or `error`."},
+        400: OAUTH_ERROR_RESPONSE,
+    },
+    openapi_extra=AUTHORIZE_CONSENT_V21_REQUEST_BODY,
+)
 async def authorize_consent(request: Request) -> Response:
     """Simulate browser consent and redirect with code or error for OAuth 2.1."""
 
@@ -258,7 +280,15 @@ async def authorize_consent(request: Request) -> Response:
     )
 
 
-@router.post("/oauth-v21/token")
+@router.post(
+    "/oauth-v21/token",
+    responses={
+        200: TOKEN_RESPONSE_V21,
+        400: OAUTH_ERROR_RESPONSE,
+        401: OAUTH_ERROR_RESPONSE,
+    },
+    openapi_extra=TOKEN_V21_REQUEST_BODY,
+)
 async def token(request: Request) -> JSONResponse:
     """Issue OAuth 2.1 bearer tokens for the mock protected resource."""
 
@@ -359,9 +389,7 @@ async def token(request: Request) -> JSONResponse:
                 scope=access_token.scope,
                 audience=validated_resource,
                 issuer=issuer,
-                refresh_token=(
-                    refresh_token.refresh_token if refresh_token is not None else None
-                ),
+                refresh_token=(refresh_token.refresh_token if refresh_token is not None else None),
             ),
         )
 
@@ -440,7 +468,14 @@ async def token(request: Request) -> JSONResponse:
     return JSONResponse(status_code=error.status_code, content=error.as_response())
 
 
-@router.post("/mcp/oauth-v21")
+@router.post(
+    "/mcp/oauth-v21",
+    responses={
+        **MCP_RESPONSES,
+        401: UNAUTHORIZED_RESPONSE,
+    },
+    openapi_extra=MCP_REQUEST_BODY,
+)
 async def oauth_v21_endpoint(request: Request) -> Response:
     """Require an OAuth 2.1 token scoped to this protected resource."""
 

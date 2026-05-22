@@ -32,8 +32,19 @@ from mcp_auth_test_server.auth.token_store import (
 from mcp_auth_test_server.discovery import MOCK_AUTHORIZATION_ENDPOINT_PATH
 from mcp_auth_test_server.mcp.base import BaseMCPHandler, JsonRpcError, RequestAuditContext
 from mcp_auth_test_server.mcp.tools import get_core_tools
+from mcp_auth_test_server.openapi_examples import (
+    AUTHORIZE_CONSENT_REQUEST_BODY,
+    AUTHORIZE_PARAMETERS,
+    AUTHORIZE_RESPONSES,
+    MCP_REQUEST_BODY,
+    MCP_RESPONSES,
+    OAUTH_ERROR_RESPONSE,
+    TOKEN_REQUEST_BODY,
+    TOKEN_RESPONSE,
+    UNAUTHORIZED_RESPONSE,
+)
 
-router = APIRouter()
+router = APIRouter(tags=["OAuth 2.0: Auth Code + PKCE"])
 logger = logging.getLogger("mcp_auth_test_server.audit")
 
 handler = BaseMCPHandler(
@@ -110,7 +121,11 @@ def _render_consent_page(
 """.strip()
 
 
-@router.get("/oauth/authorize")
+@router.get(
+    "/oauth/authorize",
+    responses=AUTHORIZE_RESPONSES,
+    openapi_extra={"parameters": AUTHORIZE_PARAMETERS},
+)
 async def authorize(request: Request) -> Response:
     """Render mock consent for a valid PKCE authorization request."""
 
@@ -156,7 +171,14 @@ async def authorize(request: Request) -> Response:
     )
 
 
-@router.post("/oauth/authorize/consent")
+@router.post(
+    "/oauth/authorize/consent",
+    responses={
+        302: {"description": "Redirect back to the client with either `code` or `error`."},
+        400: OAUTH_ERROR_RESPONSE,
+    },
+    openapi_extra=AUTHORIZE_CONSENT_REQUEST_BODY,
+)
 async def authorize_consent(request: Request) -> Response:
     """Simulate browser consent and redirect with code or error."""
 
@@ -213,7 +235,15 @@ async def authorize_consent(request: Request) -> Response:
     )
 
 
-@router.post("/oauth/token")
+@router.post(
+    "/oauth/token",
+    responses={
+        200: TOKEN_RESPONSE,
+        400: OAUTH_ERROR_RESPONSE,
+        401: OAUTH_ERROR_RESPONSE,
+    },
+    openapi_extra=TOKEN_REQUEST_BODY,
+)
 async def token(request: Request) -> JSONResponse:
     """Issue bearer access tokens for supported OAuth grant types."""
 
@@ -295,9 +325,7 @@ async def token(request: Request) -> JSONResponse:
             content=_token_response(
                 access_token=access_token.access_token,
                 scope=access_token.scope,
-                refresh_token=(
-                    refresh_token.refresh_token if refresh_token is not None else None
-                ),
+                refresh_token=(refresh_token.refresh_token if refresh_token is not None else None),
             ),
         )
 
@@ -415,7 +443,14 @@ async def token(request: Request) -> JSONResponse:
     return JSONResponse(status_code=error.status_code, content=error.as_response())
 
 
-@router.post("/mcp/oauth-v2-auth-code")
+@router.post(
+    "/mcp/oauth-v2-auth-code",
+    responses={
+        **MCP_RESPONSES,
+        401: UNAUTHORIZED_RESPONSE,
+    },
+    openapi_extra=MCP_REQUEST_BODY,
+)
 async def oauth_v2_auth_code_endpoint(request: Request) -> Response:
     """Require an issued OAuth access token before handling MCP JSON-RPC."""
 

@@ -17,6 +17,10 @@ from mcp_auth_test_server.auth.oauth import (
 )
 from mcp_auth_test_server.auth.token_store import ClientRecord, oauth_token_store
 from mcp_auth_test_server.discovery import MOCK_REGISTRATION_ENDPOINT_PATH
+from mcp_auth_test_server.openapi_examples import (
+    DYNAMIC_CLIENT_REGISTRATION_REQUEST_BODY,
+    DYNAMIC_CLIENT_REGISTRATION_RESPONSE,
+)
 
 logger = logging.getLogger("mcp_auth_test_server.audit")
 
@@ -28,7 +32,7 @@ SUPPORTED_GRANT_TYPES = {
 }
 SUPPORTED_RESPONSE_TYPES = {"code"}
 
-router = APIRouter()
+router = APIRouter(tags=["Dynamic Client Registration"])
 
 
 def _string_list(payload: dict[str, object], field: str) -> list[str] | None:
@@ -60,9 +64,7 @@ def _string_field(payload: dict[str, object], field: str) -> str | None:
 def register_dynamic_client(payload: dict[str, object]) -> ClientRecord:
     """Validate mock registration metadata and persist a client record."""
 
-    token_endpoint_auth_method = (
-        _string_field(payload, "token_endpoint_auth_method") or "none"
-    )
+    token_endpoint_auth_method = _string_field(payload, "token_endpoint_auth_method") or "none"
     if token_endpoint_auth_method not in SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS:
         raise OAuthError(
             error="invalid_client_metadata",
@@ -80,10 +82,7 @@ def register_dynamic_client(payload: dict[str, object]) -> ClientRecord:
             description=f"unsupported grant_types: {', '.join(unsupported_grants)}",
             status_code=400,
         )
-    if (
-        REFRESH_TOKEN_GRANT_TYPE in grant_types
-        and AUTHORIZATION_CODE_GRANT_TYPE not in grant_types
-    ):
+    if REFRESH_TOKEN_GRANT_TYPE in grant_types and AUTHORIZATION_CODE_GRANT_TYPE not in grant_types:
         raise OAuthError(
             error="invalid_client_metadata",
             description="refresh_token requires authorization_code",
@@ -287,7 +286,11 @@ def registration_response(client: ClientRecord) -> dict[str, object]:
     return response
 
 
-@router.post(MOCK_REGISTRATION_ENDPOINT_PATH)
+@router.post(
+    MOCK_REGISTRATION_ENDPOINT_PATH,
+    responses=DYNAMIC_CLIENT_REGISTRATION_RESPONSE,
+    openapi_extra=DYNAMIC_CLIENT_REGISTRATION_REQUEST_BODY,
+)
 async def register_client(request: Request) -> JSONResponse:
     """Register a mock OAuth client for later authorization or token calls."""
 

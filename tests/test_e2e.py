@@ -61,7 +61,7 @@ async def test_bearer_token_flow(client):
     )
 
     assert discovery.status_code == 200
-    assert discovery.json()["resource"] == "http://test/mcp/bearer-token"
+    assert discovery.json()["resource"] == "http://test/mcp/oauth-v21"
     assert initialize.status_code == 200
     assert "static mock bearer token" in initialize.json()["result"]["instructions"]
     assert ping.status_code == 200

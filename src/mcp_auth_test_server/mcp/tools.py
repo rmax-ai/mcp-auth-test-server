@@ -57,7 +57,7 @@ def get_core_tools() -> list[ToolDefinition]:
         ),
         ToolDefinition(
             name="ping",
-            description="Connectivity probe that always returns `{ \"pong\": true }`.",
+            description='Connectivity probe that always returns `{ "pong": true }`.',
             input_schema={
                 "type": "object",
                 "properties": {},

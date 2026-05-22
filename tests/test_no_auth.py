@@ -31,7 +31,10 @@ async def test_tools_list_exposes_echo_and_ping(client):
     tools = {tool["name"]: tool for tool in data["result"]["tools"]}
     assert set(tools) == {"echo", "ping"}
     assert tools["echo"]["inputSchema"]["type"] == "object"
+    assert "uppercase" in tools["echo"]["inputSchema"]["properties"]
+    assert tools["echo"]["description"].startswith("Echo test tool")
     assert tools["ping"]["inputSchema"]["additionalProperties"] is False
+    assert tools["ping"]["description"].startswith("Connectivity probe")
 
 
 @pytest.mark.asyncio
@@ -52,6 +55,25 @@ async def test_echo_tool_returns_input_arguments(client):
     data = response.json()
     assert data["result"]["structuredContent"] == {"message": "hello", "count": 2}
     assert data["result"]["isError"] is False
+
+
+@pytest.mark.asyncio
+async def test_echo_tool_uppercases_message_when_requested(client):
+    payload = {
+        "jsonrpc": "2.0",
+        "id": "echo-uppercase-1",
+        "method": "tools/call",
+        "params": {
+            "name": "echo",
+            "arguments": {"message": "hello", "uppercase": True},
+        },
+    }
+
+    response = await client.post("/mcp/no-auth", json=payload)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["result"]["structuredContent"] == {"message": "HELLO", "uppercase": True}
 
 
 @pytest.mark.asyncio

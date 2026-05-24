@@ -57,23 +57,54 @@ mcp-auth-test-server/
 
 - FastAPI — web framework
 - httpx — async HTTP client (for tests)
+- uv — dependency and command runner
 - pytest — test runner
 - ruff — linter + formatter
 - pyjwt — JWT token handling
 - cryptography — crypto primitives for OAuth 1.0a
 
+## Environment Setup
+
+```bash
+uv sync --dev
+```
+
+## Standalone CLI
+
+This repo also ships a standalone `mcp-auth` CLI in `src/mcp_auth_cli/`.
+Use it when you need to exercise MCP auth flows from a user/client perspective
+rather than by calling test endpoints manually.
+
+Common commands:
+
+```bash
+uv run mcp-auth discover http://127.0.0.1:8765/mcp/oauth
+uv run mcp-auth login http://127.0.0.1:8765/mcp/oauth
+uv run mcp-auth call http://127.0.0.1:8765/mcp/oauth initialize
+uv run mcp-auth profile list
+```
+
+The CLI supports bearer, authorization-code + PKCE, device, and
+client-credentials flows. It stores reusable local profiles and automatically
+refreshes or reacquires tokens when the selected auth mode supports it.
+
 ## Running Tests
 
 ```bash
-pytest tests/ -v              # all tests
-pytest tests/test_e2e.py -v   # end-to-end tests only
+uv run pytest tests/ -v              # all tests
+uv run pytest tests/test_e2e.py -v   # end-to-end tests only
 ```
 
 ## Commands
 
 ```bash
-make run       # start dev server
-make test      # run all tests
-make lint      # ruff check
-make format    # ruff format
+uv run uvicorn mcp_auth_test_server.app:app --reload --port 8765  # start dev server
+uv run pytest tests/ -v                                           # run all tests
+uv run ruff check src/ tests/                                     # ruff check
+uv run ruff format src/ tests/                                    # ruff format
+
+make run       # convenience wrapper for the dev server
+make test      # convenience wrapper for test suite
+make lint      # convenience wrapper for ruff check
+make format    # convenience wrapper for ruff format
 ```

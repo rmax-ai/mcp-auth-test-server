@@ -11,13 +11,7 @@ async def test_openapi_spec_is_available(client):
     data = response.json()
     assert data["openapi"].startswith("3.")
     assert "/health" in data["paths"]
-    assert "/mcp/no-auth" in data["paths"]
-
-    mcp_examples = data["paths"]["/mcp/no-auth"]["post"]["requestBody"]["content"][
-        "application/json"
-    ]["examples"]
-    assert mcp_examples["echoTool"]["value"]["params"]["name"] == "echo"
-    assert mcp_examples["echoTool"]["value"]["params"]["arguments"]["message"] == "hello from docs"
+    assert "/mcp/no-auth" not in data["paths"]
 
     authorize_parameters = data["paths"]["/oauth/authorize"]["get"]["parameters"]
     code_challenge_parameter = next(
@@ -44,14 +38,12 @@ async def test_openapi_spec_is_available(client):
     ]
 
     assert data["paths"]["/health"]["get"]["tags"] == ["Health"]
-    assert data["paths"]["/mcp/no-auth"]["post"]["tags"] == ["MCP: No Auth"]
     assert data["paths"]["/oauth/token"]["post"]["tags"] == ["OAuth 2.0: Auth Code + PKCE"]
     assert data["paths"]["/.well-known/oauth-authorization-server"]["get"]["tags"] == ["Discovery"]
 
     tag_names = [tag["name"] for tag in data["tags"]]
     assert tag_names == [
         "Health",
-        "MCP: No Auth",
         "MCP: Bearer Token",
         "OAuth 2.0: Client Credentials",
         "OAuth 2.0: Auth Code + PKCE",

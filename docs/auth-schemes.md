@@ -1,12 +1,5 @@
 # MCP Auth Test Server — Auth Schemes Reference
 
-## No Auth
-
-**Endpoint:** `/mcp/no-auth`
-**Spec:** None
-
-No authentication required. All requests accepted.
-
 ## Bearer Token
 
 **Endpoint:** `/mcp/bearer-token`

@@ -13,36 +13,6 @@ from tests.flow_helpers import (
 
 
 @pytest.mark.asyncio
-async def test_no_auth_flow(client):
-    initialize = await client.post(
-        "/mcp/no-auth",
-        json=jsonrpc_payload(request_id="e2e-no-auth-init", method="initialize"),
-    )
-    tools_list = await client.post(
-        "/mcp/no-auth",
-        json=jsonrpc_payload(request_id="e2e-no-auth-tools", method="tools/list"),
-    )
-    echo = await client.post(
-        "/mcp/no-auth",
-        json=jsonrpc_payload(
-            request_id="e2e-no-auth-echo",
-            method="tools/call",
-            params={"name": "echo", "arguments": {"message": "hello e2e", "count": 1}},
-        ),
-    )
-
-    assert initialize.status_code == 200
-    assert initialize.json()["result"]["serverInfo"]["name"] == "mcp-auth-test-server"
-    assert tools_list.status_code == 200
-    assert {tool["name"] for tool in tools_list.json()["result"]["tools"]} == {"echo", "ping"}
-    assert echo.status_code == 200
-    assert echo.json()["result"]["structuredContent"] == {
-        "message": "hello e2e",
-        "count": 1,
-    }
-
-
-@pytest.mark.asyncio
 async def test_bearer_token_flow(client):
     discovery = await client.get("/.well-known/oauth-protected-resource")
     initialize = await client.post(

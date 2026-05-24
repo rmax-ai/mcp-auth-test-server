@@ -15,7 +15,6 @@ from tests.flow_helpers import (
 )
 
 SCHEMES = (
-    "no-auth",
     "bearer-token",
     "oauth-v2-3l",
     "oauth-v2-2l",
@@ -44,25 +43,6 @@ def _assert_status(response: httpx.Response, expected: int) -> None:
             f"{response.request.method} {response.request.url} returned "
             f"{response.status_code}, expected {expected}: {response.text}"
         )
-
-
-def run_no_auth(client: httpx.Client) -> SchemeResult:
-    initialize = client.post(
-        "/mcp/no-auth",
-        json=jsonrpc_payload(request_id="live-no-auth-init", method="initialize"),
-    )
-    _assert_status(initialize, 200)
-
-    echo = client.post(
-        "/mcp/no-auth",
-        json=jsonrpc_payload(
-            request_id="live-no-auth-echo",
-            method="tools/call",
-            params={"name": "echo", "arguments": {"message": "live-check", "count": 1}},
-        ),
-    )
-    _assert_status(echo, 200)
-    return SchemeResult("no-auth", "initialize + echo succeeded")
 
 
 def run_bearer_token(client: httpx.Client) -> SchemeResult:
@@ -249,8 +229,6 @@ def run_dynamic_registration(client: httpx.Client) -> SchemeResult:
 
 
 def run_scheme(scheme: str, client: httpx.Client, *, base_url: str) -> SchemeResult:
-    if scheme == "no-auth":
-        return run_no_auth(client)
     if scheme == "bearer-token":
         return run_bearer_token(client)
     if scheme == "oauth-v2-3l":

@@ -9,6 +9,8 @@ from secrets import compare_digest, token_urlsafe
 AUTHORIZATION_CODE_TTL_SECONDS = 300
 ACCESS_TOKEN_TTL_SECONDS = 3600
 REFRESH_TOKEN_TTL_SECONDS = 2592000
+DEVICE_CODE_TTL_SECONDS = 900
+DEVICE_CODE_INTERVAL_SECONDS = 5
 
 
 @dataclass(slots=True)
@@ -68,6 +70,18 @@ class RefreshTokenRecord:
     expires_at: datetime
 
 
+@dataclass(slots=True)
+class DeviceCodeRecord:
+    """Device authorization code state for the device flow."""
+
+    device_code: str
+    user_code: str
+    client_id: str
+    scope: str
+    verified: bool = False
+    expires_at: datetime | None = None
+
+
 class OAuthTokenStore:
     """Simple in-memory store for OAuth state."""
 
@@ -76,6 +90,8 @@ class OAuthTokenStore:
         self._authorization_codes: dict[str, AuthorizationCodeRecord] = {}
         self._access_tokens: dict[str, AccessTokenRecord] = {}
         self._refresh_tokens: dict[str, RefreshTokenRecord] = {}
+        self._device_codes: dict[str, DeviceCodeRecord] = {}
+        self._user_codes: dict[str, str] = {}
         self._seed_mock_clients()
 
     def reset(self) -> None:
@@ -85,6 +101,8 @@ class OAuthTokenStore:
         self._authorization_codes.clear()
         self._access_tokens.clear()
         self._refresh_tokens.clear()
+        self._device_codes.clear()
+        self._user_codes.clear()
         self._seed_mock_clients()
 
     def register_client(
@@ -269,6 +287,72 @@ class OAuthTokenStore:
             return None
         return record
 
+    def issue_device_code(
+        self,
+        *,
+        client_id: str,
+        scope: str,
+    ) -> DeviceCodeRecord:
+        """Create and persist a device code and user code pair."""
+
+        device_code = token_urlsafe(24)
+        raw = token_urlsafe(4).upper()
+        user_code = f"{raw[:4]}-{raw[4:]}"
+        record = DeviceCodeRecord(
+            device_code=device_code,
+            user_code=user_code,
+            client_id=client_id,
+            scope=scope,
+            verified=False,
+            expires_at=self._now() + timedelta(seconds=DEVICE_CODE_TTL_SECONDS),
+        )
+        self._device_codes[device_code] = record
+        self._user_codes[user_code] = device_code
+        return record
+
+    def get_device_code(self, device_code: str) -> DeviceCodeRecord | None:
+        """Return a device code record if it exists and has not expired."""
+
+        record = self._device_codes.get(device_code)
+        if record is None:
+            return None
+        if record.expires_at is not None and record.expires_at < self._now():
+            return None
+        return record
+
+    def verify_device_code(self, user_code: str) -> DeviceCodeRecord | None:
+        """Look up user_code, mark verified, and return the record."""
+
+        device_code = self._user_codes.get(user_code)
+        if device_code is None:
+            return None
+        record = self._device_codes.get(device_code)
+        if record is None:
+            return None
+        if record.expires_at is not None and record.expires_at < self._now():
+            return None
+        record.verified = True
+        return record
+
+    def consume_device_code(
+        self,
+        device_code: str,
+        client_id: str,
+    ) -> DeviceCodeRecord | None:
+        """Pop device code, check expiry, client, and verification status."""
+
+        record = self._device_codes.pop(device_code, None)
+        if record is None:
+            return None
+        self._user_codes.pop(record.user_code, None)
+        if record.expires_at is not None and record.expires_at < self._now():
+            return None
+        if record.client_id != client_id:
+            return None
+        if not record.verified:
+            return None
+        return record
+
     @staticmethod
     def _now() -> datetime:
         return datetime.now(tz=UTC)
@@ -303,6 +387,18 @@ class OAuthTokenStore:
             redirect_uris=["https://client.example/oauth-v21/callback"],
             scope="mcp:read",
             client_name="Phase 7 Public Client",
+        )
+        self.add_client(
+            client_id="phase-11-device-client",
+            token_endpoint_auth_method="none",
+            grant_types=[
+                "urn:ietf:params:oauth:grant-type:device_code",
+                "refresh_token",
+            ],
+            response_types=[],
+            redirect_uris=[],
+            scope="mcp:read",
+            client_name="Phase 11 Device Client",
         )
 
 

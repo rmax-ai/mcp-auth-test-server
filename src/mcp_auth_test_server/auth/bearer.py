@@ -10,10 +10,11 @@ BEARER_TOKEN_ENV_VAR = "MCP_AUTH_TEST_SERVER_BEARER_TOKEN"
 DEFAULT_BEARER_TOKEN = "test-bearer-token"
 BEARER_REALM = "mcp-auth-test-server"
 MINTED_TOKEN_TTL_SECONDS = 300
+MINTED_BEARER_TOKEN_PREFIX = "static_"
 
 
 class _MintedToken:
-    """Short-lived bearer token minted by the /mcp/bearer-token/mint endpoint."""
+    """Short-lived bearer token minted by the test helper endpoint."""
 
     __slots__ = ("token", "expires_at")
 
@@ -36,7 +37,7 @@ def reset_minted_tokens() -> None:
 def mint_bearer_token() -> dict[str, object]:
     """Create a short-lived bearer token and return a token response."""
 
-    token_value = token_urlsafe(32)
+    token_value = f"{MINTED_BEARER_TOKEN_PREFIX}{token_urlsafe(32)}"
     expires_at = datetime.now(tz=UTC) + timedelta(seconds=MINTED_TOKEN_TTL_SECONDS)
     _minted_tokens[token_value] = _MintedToken(token_value, expires_at)
     return {
@@ -101,6 +102,12 @@ def validate_bearer_token_header(
     configured_token = expected_token or get_expected_bearer_token()
     if token == configured_token:
         return
+
+    if not token.startswith(MINTED_BEARER_TOKEN_PREFIX):
+        raise BearerAuthError(
+            error="invalid_token",
+            description="Bearer token is invalid",
+        )
 
     minted = _minted_tokens.get(token)
     if minted is not None and minted.is_valid():

@@ -7,6 +7,9 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
+from fastapi import Request
+from fastapi.responses import JSONResponse, Response
+
 JsonObject = dict[str, Any]
 ToolHandler = Callable[[JsonObject], Awaitable[JsonObject]]
 
@@ -246,3 +249,30 @@ class BaseMCPHandler:
             error.code,
             error.message,
         )
+
+
+async def handle_mcp_request(
+    request: Request,
+    *,
+    handler: BaseMCPHandler,
+    audit_context: RequestAuditContext,
+) -> Response:
+    """Parse and dispatch a protected MCP request."""
+
+    try:
+        payload = await request.json()
+    except ValueError as exc:
+        error = JsonRpcError(-32700, "Parse error", data=str(exc))
+        return JSONResponse(status_code=400, content=error.as_response(None))
+
+    try:
+        status_code, response_payload = await handler.handle_message(
+            payload,
+            audit_context=audit_context,
+        )
+    except JsonRpcError as exc:
+        return JSONResponse(status_code=400, content=exc.as_response(payload.get("id")))
+
+    if response_payload is None:
+        return Response(status_code=204)
+    return JSONResponse(status_code=status_code or 200, content=response_payload)

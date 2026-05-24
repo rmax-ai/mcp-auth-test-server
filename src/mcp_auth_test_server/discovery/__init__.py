@@ -10,12 +10,12 @@ PROTECTED_RESOURCE_METADATA_PATH = "/.well-known/oauth-protected-resource"
 AUTHORIZATION_SERVER_METADATA_PATH = "/.well-known/oauth-authorization-server"
 
 BEARER_TOKEN_RESOURCE_PATH = "/mcp/bearer-token"
+OAUTH_RESOURCE_PATH = "/mcp/oauth"
 MOCK_AUTHORIZATION_ENDPOINT_PATH = "/oauth/authorize"
 MOCK_TOKEN_ENDPOINT_PATH = "/oauth/token"
 MOCK_REGISTRATION_ENDPOINT_PATH = "/oauth/register"
-OAUTH_V21_RESOURCE_PATH = "/mcp/oauth-v21"
-OAUTH_V21_AUTHORIZATION_ENDPOINT_PATH = "/oauth-v21/authorize"
-OAUTH_V21_TOKEN_ENDPOINT_PATH = "/oauth-v21/token"
+MOCK_DEVICE_AUTHORIZATION_ENDPOINT_PATH = "/oauth/device/authorize"
+TEST_BEARER_TOKEN_MINT_PATH = "/test-auth/bearer-token/mint"
 
 MOCK_SCOPES = ["mcp:read", "mcp:write"]
 

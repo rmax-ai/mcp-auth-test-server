@@ -1,4 +1,4 @@
-"""Tests for the OAuth 2.0 authorization-code + PKCE flow."""
+"""Tests for the unified OAuth authorization-code + PKCE flow."""
 
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ def _authorization_params(**overrides: str) -> dict[str, str]:
         "redirect_uri": "https://client.example/callback",
         "scope": "mcp:read",
         "state": "phase-5-state",
+        "resource": "http://test/mcp/oauth",
         "code_challenge": _code_challenge(verifier),
         "code_challenge_method": "S256",
         **overrides,
@@ -48,6 +49,34 @@ async def test_authorize_requires_pkce_s256(client):
 
 
 @pytest.mark.asyncio
+async def test_authorize_requires_resource_parameter(client):
+    params = _authorization_params()
+    params.pop("resource")
+
+    response = await client.get("/oauth/authorize", params=params)
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "error": "invalid_target",
+        "error_description": "resource is required",
+    }
+
+
+@pytest.mark.asyncio
+async def test_authorize_rejects_implicit_grant(client):
+    response = await client.get(
+        "/oauth/authorize",
+        params=_authorization_params(response_type="token"),
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "error": "unsupported_response_type",
+        "error_description": "implicit grant is not supported",
+    }
+
+
+@pytest.mark.asyncio
 async def test_authorize_renders_mock_consent_page(client):
     response = await client.get("/oauth/authorize", params=_authorization_params())
 
@@ -58,7 +87,7 @@ async def test_authorize_renders_mock_consent_page(client):
 
 
 @pytest.mark.asyncio
-async def test_consent_denial_redirects_with_access_denied(client):
+async def test_consent_denial_redirects_with_access_denied_and_issuer(client):
     response = await client.post(
         "/oauth/authorize/consent",
         data={**_authorization_params(), "decision": "deny"},
@@ -70,6 +99,7 @@ async def test_consent_denial_redirects_with_access_denied(client):
     assert query == {
         "error": ["access_denied"],
         "state": ["phase-5-state"],
+        "iss": ["http://test"],
     }
 
 
@@ -83,10 +113,8 @@ async def test_full_auth_code_pkce_flow_allows_mcp_access(client):
         follow_redirects=False,
     )
 
-    assert authorize_response.status_code == 302
     authorize_query = _redirect_query(authorize_response.headers["location"])
     authorization_code = authorize_query["code"][0]
-    assert authorize_query["state"] == ["phase-5-state"]
 
     token_response = await client.post(
         "/oauth/token",
@@ -96,25 +124,27 @@ async def test_full_auth_code_pkce_flow_allows_mcp_access(client):
             "redirect_uri": "https://client.example/callback",
             "client_id": "phase-5-public-client",
             "code_verifier": verifier,
+            "resource": "http://test/mcp/oauth",
         },
     )
 
-    assert token_response.status_code == 200
     token_body = token_response.json()
-    assert token_body["token_type"] == "Bearer"
-    assert token_body["scope"] == "mcp:read"
-
     mcp_response = await client.post(
-        "/mcp/oauth-v2-auth-code",
+        "/mcp/oauth",
         headers={"Authorization": f"Bearer {token_body['access_token']}"},
         json={"jsonrpc": "2.0", "id": "init-oauth", "method": "initialize", "params": {}},
     )
 
-    assert mcp_response.status_code == 200
-    body = mcp_response.json()
-    assert body["result"]["serverInfo"]["name"] == "mcp-auth-test-server"
-    assert "authorization code + PKCE" in body["result"]["instructions"]
+    assert authorize_response.status_code == 302
+    assert authorize_query["iss"] == ["http://test"]
+    assert token_response.status_code == 200
+    assert token_body["token_type"] == "Bearer"
+    assert token_body["scope"] == "mcp:read"
+    assert token_body["aud"] == "http://test/mcp/oauth"
+    assert token_body["iss"] == "http://test"
     assert "refresh_token" in token_body
+    assert mcp_response.status_code == 200
+    assert "OAuth bearer token" in mcp_response.json()["result"]["instructions"]
 
 
 @pytest.mark.asyncio
@@ -136,6 +166,7 @@ async def test_refresh_token_exchange_allows_mcp_access(client):
             "redirect_uri": "https://client.example/callback",
             "client_id": "phase-5-public-client",
             "code_verifier": verifier,
+            "resource": "http://test/mcp/oauth",
         },
     )
     refresh_token = token_response.json()["refresh_token"]
@@ -146,20 +177,21 @@ async def test_refresh_token_exchange_allows_mcp_access(client):
             "grant_type": "refresh_token",
             "refresh_token": refresh_token,
             "client_id": "phase-5-public-client",
+            "resource": "http://test/mcp/oauth",
         },
     )
 
-    assert refreshed.status_code == 200
     refreshed_body = refreshed.json()
-    assert refreshed_body["scope"] == "mcp:read"
-    assert refreshed_body["refresh_token"] == refresh_token
-
     mcp_response = await client.post(
-        "/mcp/oauth-v2-auth-code",
+        "/mcp/oauth",
         headers={"Authorization": f"Bearer {refreshed_body['access_token']}"},
         json={"jsonrpc": "2.0", "id": "refresh-oauth", "method": "initialize", "params": {}},
     )
 
+    assert refreshed.status_code == 200
+    assert refreshed_body["scope"] == "mcp:read"
+    assert refreshed_body["refresh_token"] == refresh_token
+    assert refreshed_body["aud"] == "http://test/mcp/oauth"
     assert mcp_response.status_code == 200
 
 
@@ -183,12 +215,13 @@ async def test_oauth_tool_call_and_token_issuance_are_logged(client, caplog):
             "redirect_uri": "https://client.example/callback",
             "client_id": "phase-5-public-client",
             "code_verifier": verifier,
+            "resource": "http://test/mcp/oauth",
         },
     )
     access_token = token_response.json()["access_token"]
 
     mcp_response = await client.post(
-        "/mcp/oauth-v2-auth-code",
+        "/mcp/oauth",
         headers={"Authorization": f"Bearer {access_token}"},
         json={
             "jsonrpc": "2.0",
@@ -204,15 +237,13 @@ async def test_oauth_tool_call_and_token_issuance_are_logged(client, caplog):
         "oauth token issued endpoint=/oauth/token client_id=phase-5-public-client "
         "grant_type=authorization_code"
         in record.message
-        and "refresh_token_issued=True" in record.message
+        and "audience=http://test/mcp/oauth" in record.message
         for record in caplog.records
     )
     assert any(
-        "mcp request endpoint=/mcp/oauth-v2-auth-code auth_scheme=oauth2 "
+        "mcp request endpoint=/mcp/oauth auth_scheme=oauth2 "
         "caller=phase-5-public-client client_id=phase-5-public-client"
         in record.message
-        and "method=tools/call" in record.message
-        and "tool_name=ping" in record.message
         and "grant_type=authorization_code" in record.message
         for record in caplog.records
     )
@@ -227,7 +258,6 @@ async def test_token_exchange_rejects_invalid_verifier_and_consumes_code(client)
         params={**_authorization_params(code_verifier=verifier), "auto_approve": "true"},
         follow_redirects=False,
     )
-
     authorization_code = _redirect_query(authorize_response.headers["location"])["code"][0]
 
     rejected = await client.post(
@@ -238,6 +268,7 @@ async def test_token_exchange_rejects_invalid_verifier_and_consumes_code(client)
             "redirect_uri": "https://client.example/callback",
             "client_id": "phase-5-public-client",
             "code_verifier": "wrong-verifier",
+            "resource": "http://test/mcp/oauth",
         },
     )
     reused = await client.post(
@@ -248,6 +279,7 @@ async def test_token_exchange_rejects_invalid_verifier_and_consumes_code(client)
             "redirect_uri": "https://client.example/callback",
             "client_id": "phase-5-public-client",
             "code_verifier": verifier,
+            "resource": "http://test/mcp/oauth",
         },
     )
 
@@ -266,37 +298,25 @@ async def test_token_exchange_rejects_invalid_verifier_and_consumes_code(client)
 @pytest.mark.asyncio
 async def test_oauth_mcp_endpoint_requires_issued_access_token(client):
     response = await client.post(
-        "/mcp/oauth-v2-auth-code",
+        "/mcp/oauth",
         json={"jsonrpc": "2.0", "id": "missing", "method": "initialize", "params": {}},
     )
 
     assert response.status_code == 401
     assert response.json() == {"detail": "Missing Authorization header"}
-    assert response.headers["WWW-Authenticate"] == (
-        'Bearer realm="mcp-auth-test-server", '
-        'error="invalid_request", '
-        'error_description="Missing Authorization header"'
-    )
+    assert (
+        'resource_metadata="http://test/.well-known/oauth-protected-resource?'
+        'resource=http%3A%2F%2Ftest%2Fmcp%2Foauth"'
+    ) in response.headers["WWW-Authenticate"]
 
 
 @pytest.mark.asyncio
-async def test_auth_code_endpoint_rejects_client_credentials_token(client):
-    token_response = await client.post(
-        "/oauth/token",
-        data={
-            "grant_type": "client_credentials",
-            "client_id": "phase-6-service-client",
-            "client_secret": "phase-6-service-secret",
-        },
-    )
-
+async def test_oauth_mcp_endpoint_rejects_static_bearer_token(client):
     response = await client.post(
-        "/mcp/oauth-v2-auth-code",
-        headers={"Authorization": f"Bearer {token_response.json()['access_token']}"},
-        json={"jsonrpc": "2.0", "id": "wrong-grant", "method": "initialize", "params": {}},
+        "/mcp/oauth",
+        headers={"Authorization": "Bearer test-bearer-token"},
+        json={"jsonrpc": "2.0", "id": "static-on-oauth", "method": "initialize", "params": {}},
     )
 
     assert response.status_code == 401
-    assert response.json() == {
-        "detail": "Bearer token must be issued via authorization_code",
-    }
+    assert response.json() == {"detail": "Bearer token is invalid"}

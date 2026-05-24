@@ -29,12 +29,7 @@ async def test_register_public_client_supports_oauth_auth_code_flow(client):
         },
     )
 
-    assert registration.status_code == 201
     registration_body = registration.json()
-    assert registration_body["token_endpoint_auth_method"] == "none"
-    assert registration_body["grant_types"] == ["authorization_code"]
-    assert "client_secret" not in registration_body
-
     verifier = "phase-9-public-client-verifier"
     authorize_response = await client.get(
         "/oauth/authorize",
@@ -44,14 +39,13 @@ async def test_register_public_client_supports_oauth_auth_code_flow(client):
             "redirect_uri": "https://client.example/phase-9/callback",
             "scope": "mcp:read",
             "state": "phase-9-state",
+            "resource": "http://test/mcp/oauth",
             "code_challenge": _code_challenge(verifier),
             "code_challenge_method": "S256",
             "auto_approve": "true",
         },
         follow_redirects=False,
     )
-
-    assert authorize_response.status_code == 302
     authorization_code = _redirect_query(authorize_response.headers["location"])["code"][0]
 
     token_response = await client.post(
@@ -62,9 +56,14 @@ async def test_register_public_client_supports_oauth_auth_code_flow(client):
             "redirect_uri": "https://client.example/phase-9/callback",
             "client_id": registration_body["client_id"],
             "code_verifier": verifier,
+            "resource": "http://test/mcp/oauth",
         },
     )
 
+    assert registration.status_code == 201
+    assert registration_body["token_endpoint_auth_method"] == "none"
+    assert registration_body["grant_types"] == ["authorization_code"]
+    assert "client_secret" not in registration_body
     assert token_response.status_code == 200
     assert token_response.json()["scope"] == "mcp:read"
 
@@ -81,12 +80,7 @@ async def test_register_confidential_client_supports_client_credentials_flow(cli
         },
     )
 
-    assert registration.status_code == 201
     registration_body = registration.json()
-    assert registration_body["grant_types"] == ["client_credentials"]
-    assert registration_body["response_types"] == []
-    assert registration_body["client_secret_expires_at"] == 0
-
     token_response = await client.post(
         "/oauth/token",
         data={
@@ -96,16 +90,19 @@ async def test_register_confidential_client_supports_client_credentials_flow(cli
             "scope": "mcp:write",
         },
     )
-
-    assert token_response.status_code == 200
     access_token = token_response.json()["access_token"]
 
     mcp_response = await client.post(
-        "/mcp/oauth-v2-client-creds",
+        "/mcp/oauth",
         headers={"Authorization": f"Bearer {access_token}"},
         json={"jsonrpc": "2.0", "id": "phase-9-2l", "method": "initialize", "params": {}},
     )
 
+    assert registration.status_code == 201
+    assert registration_body["grant_types"] == ["client_credentials"]
+    assert registration_body["response_types"] == []
+    assert registration_body["client_secret_expires_at"] == 0
+    assert token_response.status_code == 200
     assert mcp_response.status_code == 200
 
 
@@ -127,6 +124,71 @@ async def test_register_public_client_can_request_refresh_token_support(client):
 
 
 @pytest.mark.asyncio
+async def test_register_public_client_supports_shared_oauth_resource_flow(client):
+    registration = await client.post(
+        "/oauth/register",
+        json={
+            "client_name": "Phase 9 OAuth Client",
+            "redirect_uris": ["https://client.example/phase-9/oauth/callback"],
+            "scope": "mcp:read",
+        },
+    )
+
+    registered_client = registration.json()
+    verifier = "phase-9-oauth-verifier"
+    authorize_response = await client.get(
+        "/oauth/authorize",
+        params={
+            "response_type": "code",
+            "client_id": registered_client["client_id"],
+            "redirect_uri": "https://client.example/phase-9/oauth/callback",
+            "scope": "mcp:read",
+            "state": "phase-9-oauth-state",
+            "resource": "http://test/mcp/oauth",
+            "code_challenge": _code_challenge(verifier),
+            "code_challenge_method": "S256",
+            "auto_approve": "true",
+        },
+        follow_redirects=False,
+    )
+    authorization_code = _redirect_query(authorize_response.headers["location"])["code"][0]
+
+    token_response = await client.post(
+        "/oauth/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": authorization_code,
+            "redirect_uri": "https://client.example/phase-9/oauth/callback",
+            "client_id": registered_client["client_id"],
+            "code_verifier": verifier,
+            "resource": "http://test/mcp/oauth",
+        },
+    )
+
+    assert token_response.status_code == 200
+    assert token_response.json()["aud"] == "http://test/mcp/oauth"
+
+
+@pytest.mark.asyncio
+async def test_register_device_flow_client_supports_device_code_grant(client):
+    registration = await client.post(
+        "/oauth/register",
+        json={
+            "client_name": "Phase 9 Device Client",
+            "grant_types": [
+                "urn:ietf:params:oauth:grant-type:device_code",
+                "refresh_token",
+            ],
+            "token_endpoint_auth_method": "none",
+            "scope": "mcp:read",
+        },
+    )
+
+    assert registration.status_code == 201
+    assert "urn:ietf:params:oauth:grant-type:device_code" in registration.json()["grant_types"]
+
+
+@pytest.mark.asyncio
 async def test_registration_rejects_refresh_token_without_authorization_code(client):
     response = await client.post(
         "/oauth/register",
@@ -136,57 +198,8 @@ async def test_registration_rejects_refresh_token_without_authorization_code(cli
     assert response.status_code == 400
     assert response.json() == {
         "error": "invalid_client_metadata",
-        "error_description": "refresh_token requires authorization_code",
+        "error_description": "refresh_token requires authorization_code or device_code",
     }
-
-
-@pytest.mark.asyncio
-async def test_register_public_client_supports_oauth_v21_flow(client):
-    registration = await client.post(
-        "/oauth/register",
-        json={
-            "client_name": "Phase 9 OAuth 2.1 Client",
-            "redirect_uris": ["https://client.example/phase-9/oauth-v21/callback"],
-            "scope": "mcp:read",
-        },
-    )
-
-    registered_client = registration.json()
-    verifier = "phase-9-oauth-v21-verifier"
-
-    authorize_response = await client.get(
-        "/oauth-v21/authorize",
-        params={
-            "response_type": "code",
-            "client_id": registered_client["client_id"],
-            "redirect_uri": "https://client.example/phase-9/oauth-v21/callback",
-            "scope": "mcp:read",
-            "state": "phase-9-oauth-v21-state",
-            "resource": "http://test/mcp/oauth-v21",
-            "code_challenge": _code_challenge(verifier),
-            "code_challenge_method": "S256",
-            "auto_approve": "true",
-        },
-        follow_redirects=False,
-    )
-
-    assert authorize_response.status_code == 302
-    authorization_code = _redirect_query(authorize_response.headers["location"])["code"][0]
-
-    token_response = await client.post(
-        "/oauth-v21/token",
-        data={
-            "grant_type": "authorization_code",
-            "code": authorization_code,
-            "redirect_uri": "https://client.example/phase-9/oauth-v21/callback",
-            "client_id": registered_client["client_id"],
-            "code_verifier": verifier,
-            "resource": "http://test/mcp/oauth-v21",
-        },
-    )
-
-    assert token_response.status_code == 200
-    assert token_response.json()["aud"] == "http://test/mcp/oauth-v21"
 
 
 @pytest.mark.asyncio

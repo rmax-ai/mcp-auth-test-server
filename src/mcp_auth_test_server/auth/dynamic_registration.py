@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from mcp_auth_test_server.auth.oauth import (
     AUTHORIZATION_CODE_GRANT_TYPE,
     CLIENT_CREDENTIALS_GRANT_TYPE,
+    DEVICE_CODE_GRANT_TYPE,
     REFRESH_TOKEN_GRANT_TYPE,
     OAuthError,
     validate_scope,
@@ -28,11 +29,12 @@ SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS = {"none", "client_secret_post"}
 SUPPORTED_GRANT_TYPES = {
     AUTHORIZATION_CODE_GRANT_TYPE,
     CLIENT_CREDENTIALS_GRANT_TYPE,
+    DEVICE_CODE_GRANT_TYPE,
     REFRESH_TOKEN_GRANT_TYPE,
 }
 SUPPORTED_RESPONSE_TYPES = {"code"}
 
-router = APIRouter(tags=["Dynamic Client Registration"])
+router = APIRouter(tags=["Auth: OAuth"])
 
 
 def _string_list(payload: dict[str, object], field: str) -> list[str] | None:
@@ -82,10 +84,14 @@ def register_dynamic_client(payload: dict[str, object]) -> ClientRecord:
             description=f"unsupported grant_types: {', '.join(unsupported_grants)}",
             status_code=400,
         )
-    if REFRESH_TOKEN_GRANT_TYPE in grant_types and AUTHORIZATION_CODE_GRANT_TYPE not in grant_types:
+    if (
+        REFRESH_TOKEN_GRANT_TYPE in grant_types
+        and AUTHORIZATION_CODE_GRANT_TYPE not in grant_types
+        and DEVICE_CODE_GRANT_TYPE not in grant_types
+    ):
         raise OAuthError(
             error="invalid_client_metadata",
-            description="refresh_token requires authorization_code",
+            description="refresh_token requires authorization_code or device_code",
             status_code=400,
         )
 
@@ -101,13 +107,21 @@ def register_dynamic_client(payload: dict[str, object]) -> ClientRecord:
         )
 
     redirect_uris = _string_list(payload, "redirect_uris") or []
-    if AUTHORIZATION_CODE_GRANT_TYPE in grant_types and not redirect_uris:
+    if (
+        AUTHORIZATION_CODE_GRANT_TYPE in grant_types
+        and DEVICE_CODE_GRANT_TYPE not in grant_types
+        and not redirect_uris
+    ):
         raise OAuthError(
             error="invalid_redirect_uri",
             description="redirect_uris is required for authorization_code clients",
             status_code=400,
         )
-    if AUTHORIZATION_CODE_GRANT_TYPE not in grant_types and redirect_uris:
+    if (
+        AUTHORIZATION_CODE_GRANT_TYPE not in grant_types
+        and DEVICE_CODE_GRANT_TYPE not in grant_types
+        and redirect_uris
+    ):
         raise OAuthError(
             error="invalid_client_metadata",
             description="redirect_uris is only supported for authorization_code clients",
@@ -132,6 +146,15 @@ def register_dynamic_client(payload: dict[str, object]) -> ClientRecord:
         raise OAuthError(
             error="invalid_client_metadata",
             description="client_credentials requires token_endpoint_auth_method client_secret_post",
+            status_code=400,
+        )
+    if (
+        DEVICE_CODE_GRANT_TYPE in grant_types
+        and token_endpoint_auth_method != "none"
+    ):
+        raise OAuthError(
+            error="invalid_client_metadata",
+            description="device_code requires token_endpoint_auth_method none",
             status_code=400,
         )
 

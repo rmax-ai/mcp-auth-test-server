@@ -266,31 +266,6 @@ OAUTH_ERROR_RESPONSE = json_response(
 
 TOKEN_RESPONSE_SCHEMA = {
     "type": "object",
-    "required": ["access_token", "token_type", "expires_in", "scope"],
-    "properties": {
-        "access_token": {"type": "string"},
-        "token_type": {"type": "string"},
-        "expires_in": {"type": "integer"},
-        "scope": {"type": "string"},
-        "refresh_token": {"type": "string"},
-    },
-    "additionalProperties": False,
-}
-
-TOKEN_RESPONSE = json_response(
-    description="Access token issued.",
-    schema=TOKEN_RESPONSE_SCHEMA,
-    example={
-        "access_token": "access-docs-example",
-        "token_type": "Bearer",
-        "expires_in": 3600,
-        "scope": "mcp:read",
-        "refresh_token": "refresh-docs-example",
-    },
-)
-
-TOKEN_RESPONSE_V21_SCHEMA = {
-    "type": "object",
     "required": ["access_token", "token_type", "expires_in", "scope", "aud", "iss"],
     "properties": {
         "access_token": {"type": "string"},
@@ -304,15 +279,15 @@ TOKEN_RESPONSE_V21_SCHEMA = {
     "additionalProperties": False,
 }
 
-TOKEN_RESPONSE_V21 = json_response(
-    description="OAuth 2.1 access token issued.",
-    schema=TOKEN_RESPONSE_V21_SCHEMA,
+TOKEN_RESPONSE = json_response(
+    description="Access token issued.",
+    schema=TOKEN_RESPONSE_SCHEMA,
     example={
         "access_token": "access-docs-example",
         "token_type": "Bearer",
         "expires_in": 3600,
         "scope": "mcp:read",
-        "aud": "http://test/mcp/oauth-v21",
+        "aud": "http://test/mcp/oauth",
         "iss": "http://test",
         "refresh_token": "refresh-docs-example",
     },
@@ -338,6 +313,12 @@ AUTHORIZE_PARAMETERS = [
         "name": "redirect_uri",
         "in": "query",
         "required": True,
+        "description": (
+            "Absolute redirect URI registered for the client. "
+            "When testing from Swagger UI, prefer a same-origin callback such as "
+            "`http://<this-host>/docs/oauth-callback` so the browser can "
+            "render the redirected result."
+        ),
         "schema": {"type": "string", "format": "uri"},
         "example": "https://client.example/callback",
     },
@@ -354,6 +335,14 @@ AUTHORIZE_PARAMETERS = [
         "required": False,
         "schema": {"type": "string"},
         "example": "phase-5-state",
+    },
+    {
+        "name": "resource",
+        "in": "query",
+        "required": True,
+        "description": "Protected resource URI. Must match the canonical `/mcp/oauth` resource.",
+        "schema": {"type": "string", "format": "uri"},
+        "example": "http://test/mcp/oauth",
     },
     {
         "name": "code_challenge",
@@ -386,163 +375,17 @@ AUTHORIZE_RESPONSES = {
             "text/html": {"example": "<html><body><h1>Mock OAuth Consent</h1></body></html>"}
         },
     },
-    302: {"description": "Redirect to the client redirect URI with an authorization code."},
+    302: {
+        "description": (
+            "Redirect to the client redirect URI with an authorization code. "
+            "In Swagger UI, use a same-origin callback like `/docs/oauth-callback` "
+            "to inspect the redirected query parameters in the browser."
+        )
+    },
     400: OAUTH_ERROR_RESPONSE,
 }
 
 AUTHORIZE_CONSENT_REQUEST_BODY = request_body(
-    content=form_examples_content(
-        schema={
-            "type": "object",
-            "required": [
-                "client_id",
-                "redirect_uri",
-                "scope",
-                "code_challenge",
-                "code_challenge_method",
-                "decision",
-            ],
-            "properties": {
-                "client_id": {"type": "string"},
-                "redirect_uri": {"type": "string", "format": "uri"},
-                "scope": {"type": "string"},
-                "state": {"type": "string"},
-                "code_challenge": {"type": "string"},
-                "code_challenge_method": {"type": "string", "enum": ["S256"]},
-                "decision": {"type": "string", "enum": ["approve", "deny"]},
-            },
-            "additionalProperties": False,
-        },
-        examples={
-            "approve": {
-                "summary": "Approve the consent prompt",
-                "value": {
-                    "client_id": "phase-5-public-client",
-                    "redirect_uri": "https://client.example/callback",
-                    "scope": "mcp:read",
-                    "state": "phase-5-state",
-                    "code_challenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGqstwM5lM",
-                    "code_challenge_method": "S256",
-                    "decision": "approve",
-                },
-            },
-            "deny": {
-                "summary": "Deny the consent prompt",
-                "value": {
-                    "client_id": "phase-5-public-client",
-                    "redirect_uri": "https://client.example/callback",
-                    "scope": "mcp:read",
-                    "state": "phase-5-state",
-                    "code_challenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGqstwM5lM",
-                    "code_challenge_method": "S256",
-                    "decision": "deny",
-                },
-            },
-        },
-    )
-)
-
-TOKEN_REQUEST_BODY = request_body(
-    content=form_examples_content(
-        schema={
-            "oneOf": [
-                {
-                    "type": "object",
-                    "required": [
-                        "grant_type",
-                        "code",
-                        "redirect_uri",
-                        "client_id",
-                        "code_verifier",
-                    ],
-                    "properties": {
-                        "grant_type": {"type": "string", "enum": ["authorization_code"]},
-                        "code": {"type": "string"},
-                        "redirect_uri": {"type": "string", "format": "uri"},
-                        "client_id": {"type": "string"},
-                        "code_verifier": {"type": "string"},
-                    },
-                    "additionalProperties": True,
-                },
-                {
-                    "type": "object",
-                    "required": ["grant_type", "refresh_token", "client_id"],
-                    "properties": {
-                        "grant_type": {"type": "string", "enum": ["refresh_token"]},
-                        "refresh_token": {"type": "string"},
-                        "client_id": {"type": "string"},
-                    },
-                    "additionalProperties": True,
-                },
-                {
-                    "type": "object",
-                    "required": ["grant_type", "client_id", "client_secret"],
-                    "properties": {
-                        "grant_type": {"type": "string", "enum": ["client_credentials"]},
-                        "client_id": {"type": "string"},
-                        "client_secret": {"type": "string"},
-                        "scope": {"type": "string"},
-                    },
-                    "additionalProperties": True,
-                },
-            ]
-        },
-        examples={
-            "authorizationCode": {
-                "summary": "Exchange an authorization code",
-                "value": {
-                    "grant_type": "authorization_code",
-                    "code": "authorization-code-from-redirect",
-                    "redirect_uri": "https://client.example/callback",
-                    "client_id": "phase-5-public-client",
-                    "code_verifier": "phase-10-verifier",
-                },
-            },
-            "refreshToken": {
-                "summary": "Refresh an access token",
-                "value": {
-                    "grant_type": "refresh_token",
-                    "refresh_token": "refresh-docs-example",
-                    "client_id": "phase-5-public-client",
-                },
-            },
-            "clientCredentials": {
-                "summary": "Client-credentials token request",
-                "value": {
-                    "grant_type": "client_credentials",
-                    "client_id": "phase-6-service-client",
-                    "client_secret": "phase-6-service-secret",
-                    "scope": "mcp:read",
-                },
-            },
-        },
-    )
-)
-
-AUTHORIZE_V21_PARAMETERS = [
-    *AUTHORIZE_PARAMETERS[:5],
-    {
-        "name": "resource",
-        "in": "query",
-        "required": True,
-        "schema": {"type": "string", "format": "uri"},
-        "example": "http://test/mcp/oauth-v21",
-    },
-    *AUTHORIZE_PARAMETERS[5:7],
-    {
-        "name": "auto_approve",
-        "in": "query",
-        "required": False,
-        "description": (
-            "When `true`, skip the HTML consent page and redirect immediately. "
-            "Defaults to `false`, showing the consent page."
-        ),
-        "schema": {"type": "string", "enum": ["true", "false"]},
-        "example": "false",
-    },
-]
-
-AUTHORIZE_CONSENT_V21_REQUEST_BODY = request_body(
     content=form_examples_content(
         schema={
             "type": "object",
@@ -569,26 +412,26 @@ AUTHORIZE_CONSENT_V21_REQUEST_BODY = request_body(
         },
         examples={
             "approve": {
-                "summary": "Approve the OAuth 2.1 consent prompt",
+                "summary": "Approve the consent prompt",
                 "value": {
-                    "client_id": "phase-7-public-client",
-                    "redirect_uri": "https://client.example/oauth-v21/callback",
+                    "client_id": "phase-5-public-client",
+                    "redirect_uri": "https://client.example/callback",
                     "scope": "mcp:read",
-                    "state": "phase-7-state",
-                    "resource": "http://test/mcp/oauth-v21",
+                    "state": "phase-5-state",
+                    "resource": "http://test/mcp/oauth",
                     "code_challenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGqstwM5lM",
                     "code_challenge_method": "S256",
                     "decision": "approve",
                 },
             },
             "deny": {
-                "summary": "Deny the OAuth 2.1 consent prompt",
+                "summary": "Deny the consent prompt",
                 "value": {
-                    "client_id": "phase-7-public-client",
-                    "redirect_uri": "https://client.example/oauth-v21/callback",
+                    "client_id": "phase-5-public-client",
+                    "redirect_uri": "https://client.example/callback",
                     "scope": "mcp:read",
-                    "state": "phase-7-state",
-                    "resource": "http://test/mcp/oauth-v21",
+                    "state": "phase-5-state",
+                    "resource": "http://test/mcp/oauth",
                     "code_challenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGqstwM5lM",
                     "code_challenge_method": "S256",
                     "decision": "deny",
@@ -598,7 +441,7 @@ AUTHORIZE_CONSENT_V21_REQUEST_BODY = request_body(
     )
 )
 
-TOKEN_V21_REQUEST_BODY = request_body(
+TOKEN_REQUEST_BODY = request_body(
     content=form_examples_content(
         schema={
             "oneOf": [
@@ -633,27 +476,68 @@ TOKEN_V21_REQUEST_BODY = request_body(
                     },
                     "additionalProperties": True,
                 },
+                {
+                    "type": "object",
+                    "required": ["grant_type", "client_id", "client_secret"],
+                    "properties": {
+                        "grant_type": {"type": "string", "enum": ["client_credentials"]},
+                        "client_id": {"type": "string"},
+                        "client_secret": {"type": "string"},
+                        "scope": {"type": "string"},
+                    },
+                    "additionalProperties": True,
+                },
+                {
+                    "type": "object",
+                    "required": ["grant_type", "client_id", "device_code"],
+                    "properties": {
+                        "grant_type": {
+                            "type": "string",
+                            "enum": ["urn:ietf:params:oauth:grant-type:device_code"],
+                        },
+                        "client_id": {"type": "string"},
+                        "device_code": {"type": "string"},
+                    },
+                    "additionalProperties": True,
+                },
             ]
         },
         examples={
             "authorizationCode": {
-                "summary": "Exchange an OAuth 2.1 authorization code",
+                "summary": "Exchange an authorization code",
                 "value": {
                     "grant_type": "authorization_code",
                     "code": "authorization-code-from-redirect",
-                    "redirect_uri": "https://client.example/oauth-v21/callback",
-                    "client_id": "phase-7-public-client",
-                    "code_verifier": "phase-7-verifier",
-                    "resource": "http://test/mcp/oauth-v21",
+                    "redirect_uri": "https://client.example/callback",
+                    "client_id": "phase-5-public-client",
+                    "code_verifier": "phase-10-verifier",
+                    "resource": "http://test/mcp/oauth",
                 },
             },
             "refreshToken": {
-                "summary": "Refresh an OAuth 2.1 access token",
+                "summary": "Refresh an access token",
                 "value": {
                     "grant_type": "refresh_token",
                     "refresh_token": "refresh-docs-example",
-                    "client_id": "phase-7-public-client",
-                    "resource": "http://test/mcp/oauth-v21",
+                    "client_id": "phase-5-public-client",
+                    "resource": "http://test/mcp/oauth",
+                },
+            },
+            "clientCredentials": {
+                "summary": "Client-credentials token request",
+                "value": {
+                    "grant_type": "client_credentials",
+                    "client_id": "phase-6-service-client",
+                    "client_secret": "phase-6-service-secret",
+                    "scope": "mcp:read",
+                },
+            },
+            "deviceCode": {
+                "summary": "Device code token request",
+                "value": {
+                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                    "client_id": "phase-11-device-client",
+                    "device_code": "device-docs-example",
                 },
             },
         },
@@ -702,6 +586,18 @@ DYNAMIC_CLIENT_REGISTRATION_REQUEST_BODY = request_body(
                     "token_endpoint_auth_method": "client_secret_post",
                     "scope": "mcp:read",
                     "client_name": "Docs Example Service Client",
+                },
+            },
+            "deviceClient": {
+                "summary": "Register a public device-flow client",
+                "value": {
+                    "grant_types": [
+                        "urn:ietf:params:oauth:grant-type:device_code",
+                        "refresh_token",
+                    ],
+                    "token_endpoint_auth_method": "none",
+                    "scope": "mcp:read",
+                    "client_name": "Docs Example Device Client",
                 },
             },
         },
@@ -759,7 +655,7 @@ PROTECTED_RESOURCE_METADATA_PARAMETERS = [
         "required": False,
         "description": "Optional protected resource URL to resolve metadata for.",
         "schema": {"type": "string", "format": "uri"},
-        "example": "http://test/mcp/oauth-v21",
+        "example": "http://test/mcp/oauth",
     }
 ]
 
@@ -792,9 +688,9 @@ PROTECTED_RESOURCE_METADATA_RESPONSES = {
             "additionalProperties": False,
         },
         example={
-            "resource": "http://test/mcp/oauth-v21",
+            "resource": "http://test/mcp/oauth",
             "authorization_servers": [
-                "http://test/.well-known/oauth-authorization-server?resource=http%3A%2F%2Ftest%2Fmcp%2Foauth-v21"
+                "http://test/.well-known/oauth-authorization-server?resource=http%3A%2F%2Ftest%2Fmcp%2Foauth"
             ],
             "bearer_methods_supported": ["header"],
             "scopes_supported": ["mcp:read", "mcp:write"],
@@ -823,6 +719,7 @@ AUTHORIZATION_SERVER_METADATA_RESPONSES = {
             "properties": {
                 "issuer": {"type": "string", "format": "uri"},
                 "authorization_endpoint": {"type": "string", "format": "uri"},
+                "device_authorization_endpoint": {"type": "string", "format": "uri"},
                 "token_endpoint": {"type": "string", "format": "uri"},
                 "registration_endpoint": {"type": "string", "format": "uri"},
                 "response_types_supported": {
@@ -851,12 +748,18 @@ AUTHORIZATION_SERVER_METADATA_RESPONSES = {
         },
         example={
             "issuer": "http://test",
-            "authorization_endpoint": "http://test/oauth-v21/authorize",
-            "token_endpoint": "http://test/oauth-v21/token",
+            "authorization_endpoint": "http://test/oauth/authorize",
+            "device_authorization_endpoint": "http://test/oauth/device/authorize",
+            "token_endpoint": "http://test/oauth/token",
             "registration_endpoint": "http://test/oauth/register",
             "response_types_supported": ["code"],
-            "grant_types_supported": ["authorization_code", "refresh_token"],
-            "token_endpoint_auth_methods_supported": ["none"],
+            "grant_types_supported": [
+                "authorization_code",
+                "refresh_token",
+                "client_credentials",
+                "urn:ietf:params:oauth:grant-type:device_code",
+            ],
+            "token_endpoint_auth_methods_supported": ["none", "client_secret_post"],
             "code_challenge_methods_supported": ["S256"],
             "resource_indicators_supported": True,
             "scopes_supported": ["mcp:read", "mcp:write"],

@@ -7,12 +7,10 @@ from fastapi import APIRouter, Request
 from mcp_auth_test_server.discovery import (
     AUTHORIZATION_SERVER_METADATA_PATH,
     MOCK_AUTHORIZATION_ENDPOINT_PATH,
+    MOCK_DEVICE_AUTHORIZATION_ENDPOINT_PATH,
     MOCK_REGISTRATION_ENDPOINT_PATH,
     MOCK_SCOPES,
     MOCK_TOKEN_ENDPOINT_PATH,
-    OAUTH_V21_AUTHORIZATION_ENDPOINT_PATH,
-    OAUTH_V21_RESOURCE_PATH,
-    OAUTH_V21_TOKEN_ENDPOINT_PATH,
     build_absolute_url,
     get_origin_url,
 )
@@ -31,32 +29,15 @@ def build_auth_server_metadata(
 ) -> dict[str, object]:
     """Return authorization server metadata for the mock OAuth test flow."""
 
-    oauth_v21_resource = build_absolute_url(request, OAUTH_V21_RESOURCE_PATH)
-    if resource == oauth_v21_resource:
-        return {
-            "issuer": get_origin_url(request),
-            "authorization_endpoint": build_absolute_url(
-                request,
-                OAUTH_V21_AUTHORIZATION_ENDPOINT_PATH,
-            ),
-            "token_endpoint": build_absolute_url(request, OAUTH_V21_TOKEN_ENDPOINT_PATH),
-            "registration_endpoint": build_absolute_url(
-                request,
-                MOCK_REGISTRATION_ENDPOINT_PATH,
-            ),
-            "response_types_supported": ["code"],
-            "grant_types_supported": ["authorization_code", "refresh_token"],
-            "token_endpoint_auth_methods_supported": ["none"],
-            "code_challenge_methods_supported": ["S256"],
-            "resource_indicators_supported": True,
-            "scopes_supported": MOCK_SCOPES,
-        }
-
     return {
         "issuer": get_origin_url(request),
         "authorization_endpoint": build_absolute_url(
             request,
             MOCK_AUTHORIZATION_ENDPOINT_PATH,
+        ),
+        "device_authorization_endpoint": build_absolute_url(
+            request,
+            MOCK_DEVICE_AUTHORIZATION_ENDPOINT_PATH,
         ),
         "token_endpoint": build_absolute_url(request, MOCK_TOKEN_ENDPOINT_PATH),
         "registration_endpoint": build_absolute_url(
@@ -64,9 +45,15 @@ def build_auth_server_metadata(
             MOCK_REGISTRATION_ENDPOINT_PATH,
         ),
         "response_types_supported": ["code"],
-        "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"],
+        "grant_types_supported": [
+            "authorization_code",
+            "refresh_token",
+            "client_credentials",
+            "urn:ietf:params:oauth:grant-type:device_code",
+        ],
         "token_endpoint_auth_methods_supported": ["none", "client_secret_post"],
         "code_challenge_methods_supported": ["S256"],
+        "resource_indicators_supported": True,
         "scopes_supported": MOCK_SCOPES,
     }
 

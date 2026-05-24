@@ -15,6 +15,7 @@ DEFAULT_OAUTH_SCOPE = MOCK_SCOPES[0]
 AUTHORIZATION_CODE_GRANT_TYPE = "authorization_code"
 CLIENT_CREDENTIALS_GRANT_TYPE = "client_credentials"
 REFRESH_TOKEN_GRANT_TYPE = "refresh_token"
+DEVICE_CODE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code"
 
 
 class OAuthError(Exception):
@@ -48,21 +49,33 @@ class AuthorizationRequest:
     redirect_uri: str
     scope: str
     state: str | None
+    resource: str
     code_challenge: str
     code_challenge_method: str
 
 
-def validate_authorization_request(query_params: dict[str, str | None]) -> AuthorizationRequest:
+def validate_authorization_request(
+    query_params: dict[str, str | None],
+    *,
+    expected_resource: str,
+) -> AuthorizationRequest:
     """Validate required query parameters for the auth-code flow."""
 
     response_type = query_params.get("response_type")
     client_id = query_params.get("client_id")
     redirect_uri = query_params.get("redirect_uri")
+    resource = query_params.get("resource")
     code_challenge = query_params.get("code_challenge")
     code_challenge_method = query_params.get("code_challenge_method")
     scope = query_params.get("scope") or DEFAULT_OAUTH_SCOPE
     state = query_params.get("state")
 
+    if response_type == "token":
+        raise OAuthError(
+            error="unsupported_response_type",
+            description="implicit grant is not supported",
+            status_code=400,
+        )
     if response_type != "code":
         raise OAuthError(
             error="unsupported_response_type",
@@ -79,6 +92,18 @@ def validate_authorization_request(query_params: dict[str, str | None]) -> Autho
         raise OAuthError(
             error="invalid_request",
             description="redirect_uri is required",
+            status_code=400,
+        )
+    if not resource:
+        raise OAuthError(
+            error="invalid_target",
+            description="resource is required",
+            status_code=400,
+        )
+    if resource != expected_resource:
+        raise OAuthError(
+            error="invalid_target",
+            description="resource is not supported",
             status_code=400,
         )
     if not code_challenge:
@@ -101,6 +126,7 @@ def validate_authorization_request(query_params: dict[str, str | None]) -> Autho
         redirect_uri=redirect_uri,
         scope=scope,
         state=state,
+        resource=resource,
         code_challenge=code_challenge,
         code_challenge_method=code_challenge_method,
     )
@@ -216,3 +242,49 @@ def validate_access_token_issuer(
             error="invalid_token",
             description="Bearer token issuer is invalid",
         )
+
+
+def validate_token_resource(
+    *,
+    resource: str | None,
+    expected_resource: str,
+    authorized_resource: str,
+) -> str:
+    """Validate the token request resource parameter against the authorized resource."""
+
+    if resource is None:
+        raise OAuthError(
+            error="invalid_target",
+            description="resource is required",
+            status_code=400,
+        )
+    if resource != expected_resource:
+        raise OAuthError(
+            error="invalid_target",
+            description="resource is not supported",
+            status_code=400,
+        )
+    if resource != authorized_resource:
+        raise OAuthError(
+            error="invalid_target",
+            description="resource does not match the original authorization request",
+            status_code=400,
+        )
+    return resource
+
+
+def validate_refresh_resource(
+    *,
+    resource: str | None,
+    expected_resource: str,
+    authorized_resource: str,
+) -> str:
+    """Validate an optional refresh token resource parameter."""
+
+    if resource is None:
+        return authorized_resource
+    return validate_token_resource(
+        resource=resource,
+        expected_resource=expected_resource,
+        authorized_resource=authorized_resource,
+    )

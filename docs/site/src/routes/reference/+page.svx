@@ -1,0 +1,62 @@
+---
+title: Endpoint and behavior reference
+description: Reference summary for protected resources, discovery endpoints, and auth behavior.
+---
+
+<div class="eyebrow">Reference</div>
+
+# Endpoint and behavior reference
+
+## Protected resources
+
+| Endpoint | Purpose |
+| --- | --- |
+| `/mcp/oauth` | Canonical OAuth-protected MCP JSON-RPC endpoint |
+| `/mcp/bearer-token` | Static bearer-token MCP JSON-RPC endpoint |
+
+## OAuth authorization server endpoints
+
+| Endpoint | Purpose |
+| --- | --- |
+| `/.well-known/oauth-protected-resource` | Protected resource metadata |
+| `/.well-known/oauth-authorization-server` | Authorization server metadata |
+| `/oauth/authorize` | Authorization endpoint for auth-code + PKCE |
+| `/oauth/token` | Token endpoint for auth-code, refresh, client-credentials, and device grants |
+| `/oauth/device/authorize` | Device authorization endpoint |
+| `/oauth/device/verify` | Mock verification UI |
+| `/oauth/device/verify/consent` | Verification form handler |
+| `/oauth/register` | Dynamic client registration |
+
+## Shared OAuth behavior
+
+- PKCE `S256` only
+- implicit grant rejected
+- `resource` required for auth-code exchanges
+- issuer propagated on authorization redirects
+- issuer and audience preserved on issued and refreshed tokens
+
+## Standalone CLI behavior
+
+- Resource-centric login rather than server-centric login
+- Profile persistence for later reuse
+- Automatic refresh for refreshable auth-code and device profiles
+- Automatic token reacquisition for client-credentials profiles
+- No automatic refresh for manual bearer profiles
+
+## Typical discovery chain
+
+1. Call the protected resource.
+2. Fetch `/.well-known/oauth-protected-resource`.
+3. Follow the advertised `authorization_servers`.
+4. Fetch `/.well-known/oauth-authorization-server`.
+5. Start the appropriate login flow.
+
+## What this project does not try to cover
+
+- Implicit grant
+- Resource Owner Password Credentials
+- Token exchange
+- PAR, JAR, JARM
+- DPoP
+- mTLS sender-constrained tokens
+- OIDC userinfo or ID tokens

@@ -41,7 +41,8 @@ mcp-auth-test-server/
 │   ├── test_dynamic_registration.py
 │   └── test_e2e.py
 ├── docs/
-│   └── auth-schemes.md
+│   ├── auth-schemes.md
+│   └── site/              # SvelteKit + mdsvex docs website
 └── scripts/
     └── iterate.sh
 ```
@@ -87,6 +88,22 @@ uv run mcp-auth profile list
 The CLI supports bearer, authorization-code + PKCE, device, and
 client-credentials flows. It stores reusable local profiles and automatically
 refreshes or reacquires tokens when the selected auth mode supports it.
+
+## Docs Website
+
+The repo also includes a static docs app in `docs/site/`. It is a separate
+Node-based project built with SvelteKit, `@sveltejs/adapter-static`, and
+mdsvex, and it is deployed to GitHub Pages from `.github/workflows/deploy-docs.yml`.
+
+Common docs-site commands:
+
+```bash
+cd docs/site
+npm install
+npm run dev
+npm run check
+npm run build
+```
 
 ## Running Tests
 

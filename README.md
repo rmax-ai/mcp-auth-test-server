@@ -77,6 +77,22 @@ uv run uvicorn mcp_auth_test_server.app:app --reload --port 8765
 uv run pytest tests/ -v
 ```
 
+## Docs site
+
+The repo includes a static docs website under `docs/site`, built with
+SvelteKit, `adapter-static`, and mdsvex. It is deployed to GitHub Pages by
+`.github/workflows/deploy-docs.yml`.
+
+Local docs-site commands:
+
+```bash
+cd docs/site
+npm install
+npm run dev
+npm run check
+npm run build
+```
+
 ## Standalone CLI
 
 This repo now includes a standalone `mcp-auth` CLI for exercising generic MCP

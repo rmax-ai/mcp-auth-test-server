@@ -1,0 +1,75 @@
+---
+title: MCP auth surfaces, without guesswork
+description: Static docs for the MCP Auth Test Server and the standalone mcp-auth CLI.
+---
+
+<div class="eyebrow">MCP • OAuth • bearer • device • client credentials</div>
+
+# MCP auth surfaces,
+# without guesswork
+
+<p class="hero-note">
+  This project gives you two things: a FastAPI server with intentionally
+  separate MCP auth surfaces, and a standalone <code>mcp-auth</code> CLI that
+  can discover and exercise those surfaces end to end.
+</p>
+
+<div class="panel-grid">
+  <article class="panel-card">
+    <h3>One OAuth resource</h3>
+    <p>
+      <code>/mcp/oauth</code> accepts OAuth-issued bearer tokens from auth-code,
+      device, and client-credentials grants.
+    </p>
+  </article>
+  <article class="panel-card">
+    <h3>One static bearer surface</h3>
+    <p>
+      <code>/mcp/bearer-token</code> is deliberately simpler and does not
+      participate in discovery or token issuance.
+    </p>
+  </article>
+  <article class="panel-card">
+    <h3>One generic client</h3>
+    <p>
+      The CLI is resource-centric, not server-specific. It discovers metadata,
+      selects an auth mode, saves profiles, and keeps tokens valid.
+    </p>
+  </article>
+</div>
+
+## Quick start
+
+```bash
+uv sync --extra dev
+uv run uvicorn mcp_auth_test_server.app:app --reload --port 8765
+```
+
+In a second terminal:
+
+```bash
+uv run mcp-auth discover http://127.0.0.1:8765/mcp/oauth
+uv run mcp-auth login http://127.0.0.1:8765/mcp/oauth
+uv run mcp-auth call http://127.0.0.1:8765/mcp/oauth initialize
+```
+
+<div class="command-callout">
+  <strong>Auth-code default behavior</strong>
+  <p>
+    When you run <code>mcp-auth login --auth-mode auth-code</code>, the CLI
+    starts a localhost callback listener, prints the consent URL, and waits for
+    the browser redirect in the background.
+  </p>
+</div>
+
+## What the docs site covers
+
+- <a href="/flows/">Flow walkthroughs</a> with exact CLI commands for each auth mode
+- <a href="/reference/">Reference</a> for endpoints, discovery documents, and behavior constraints
+- Enough context to verify whether a client implementation is doing the right thing
+
+## Why this exists
+
+Most auth test fixtures blur different schemes together. This one does the
+opposite: each auth surface stays explicit, and the shared OAuth resource keeps
+resource, issuer, PKCE, and refresh behavior visible enough to test against.

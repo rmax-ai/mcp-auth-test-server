@@ -64,8 +64,8 @@ uv run mcp-auth call http://127.0.0.1:8765/mcp/oauth initialize
 
 ## What the docs site covers
 
-- <a href="/flows/">Flow walkthroughs</a> with exact CLI commands for each auth mode
-- <a href="/reference/">Reference</a> for endpoints, discovery documents, and behavior constraints
+- <a href="flows/">Flow walkthroughs</a> with exact CLI commands for each auth mode
+- <a href="reference/">Reference</a> for endpoints, discovery documents, and behavior constraints
 - Enough context to verify whether a client implementation is doing the right thing
 
 ## Why this exists

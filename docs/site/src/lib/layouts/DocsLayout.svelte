@@ -1,12 +1,14 @@
 <script>
+  import { base } from "$app/paths";
+
   export let title = "MCP Auth Test Server";
   export let description =
     "A test server and CLI for exercising bearer, OAuth auth-code, device, and client-credentials flows for MCP resources.";
 
   const navItems = [
-    { href: "/", label: "Overview" },
-    { href: "/flows/", label: "Flows" },
-    { href: "/reference/", label: "Reference" },
+    { href: `${base}/`, label: "Overview" },
+    { href: `${base}/flows/`, label: "Flows" },
+    { href: `${base}/reference/`, label: "Reference" },
   ];
 </script>
 
@@ -20,7 +22,7 @@
   <div class="backdrop backdrop-b"></div>
 
   <header class="site-header">
-    <a class="brand" href="/">
+    <a class="brand" href={`${base}/`}>
       <span class="brand-mark">MCP</span>
       <span class="brand-copy">
         <strong>MCP Auth Test Server</strong>

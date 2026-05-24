@@ -32,7 +32,7 @@
       {#each navItems as item}
         <a href={item.href}>{item.label}</a>
       {/each}
-      <a href="https://github.com" rel="noreferrer">GitHub</a>
+      <a href="https://github.com/rmax-ai/mcp-auth-test-server" rel="noreferrer">GitHub</a>
     </nav>
   </header>
 

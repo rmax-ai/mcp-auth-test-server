@@ -53,6 +53,10 @@ Mock credentials:
 - `client_id=phase-6-service-client`
 - `client_secret=phase-6-service-secret`
 
+Fixture clients (CIMD):
+- `client_id=dev-confidential-client`, `client_secret=dev-confidential-secret` — auth-code + client-creds
+- `client_id=dev-admin-client`, `client_secret=dev-admin-secret` — admin scope
+
 ## OAuth 2.1 Authorization Code + PKCE
 
 **Endpoints:**

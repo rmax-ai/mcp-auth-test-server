@@ -25,7 +25,7 @@ async def test_register_public_client_supports_oauth_auth_code_flow(client):
         json={
             "client_name": "Phase 9 Browser Client",
             "redirect_uris": ["https://client.example/phase-9/callback"],
-            "scope": "mcp:read",
+            "scope": "mcp:tools:list mcp:tools:echo mcp:tools:read",
         },
     )
 
@@ -42,7 +42,7 @@ async def test_register_public_client_supports_oauth_auth_code_flow(client):
             "response_type": "code",
             "client_id": registration_body["client_id"],
             "redirect_uri": "https://client.example/phase-9/callback",
-            "scope": "mcp:read",
+            "scope": "mcp:tools:list mcp:tools:echo mcp:tools:read",
             "state": "phase-9-state",
             "code_challenge": _code_challenge(verifier),
             "code_challenge_method": "S256",
@@ -66,7 +66,7 @@ async def test_register_public_client_supports_oauth_auth_code_flow(client):
     )
 
     assert token_response.status_code == 200
-    assert token_response.json()["scope"] == "mcp:read"
+    assert token_response.json()["scope"] == "mcp:tools:list mcp:tools:echo mcp:tools:read"
 
 
 @pytest.mark.asyncio
@@ -77,7 +77,7 @@ async def test_register_confidential_client_supports_client_credentials_flow(cli
             "client_name": "Phase 9 Service Client",
             "token_endpoint_auth_method": "client_secret_post",
             "grant_types": ["client_credentials"],
-            "scope": "mcp:write",
+            "scope": "mcp:tools:write",
         },
     )
 
@@ -93,7 +93,7 @@ async def test_register_confidential_client_supports_client_credentials_flow(cli
             "grant_type": "client_credentials",
             "client_id": registration_body["client_id"],
             "client_secret": registration_body["client_secret"],
-            "scope": "mcp:write",
+            "scope": "mcp:tools:write",
         },
     )
 
@@ -116,7 +116,7 @@ async def test_register_public_client_supports_oauth_v21_flow(client):
         json={
             "client_name": "Phase 9 OAuth 2.1 Client",
             "redirect_uris": ["https://client.example/phase-9/oauth-v21/callback"],
-            "scope": "mcp:read",
+            "scope": "mcp:tools:list mcp:tools:echo mcp:tools:read",
         },
     )
 
@@ -129,7 +129,7 @@ async def test_register_public_client_supports_oauth_v21_flow(client):
             "response_type": "code",
             "client_id": registered_client["client_id"],
             "redirect_uri": "https://client.example/phase-9/oauth-v21/callback",
-            "scope": "mcp:read",
+            "scope": "mcp:tools:list mcp:tools:echo mcp:tools:read",
             "state": "phase-9-oauth-v21-state",
             "resource": "http://test/mcp/oauth-v21",
             "code_challenge": _code_challenge(verifier),

@@ -35,7 +35,14 @@ async def test_no_auth_flow(client):
     assert initialize.status_code == 200
     assert initialize.json()["result"]["serverInfo"]["name"] == "mcp-auth-test-server"
     assert tools_list.status_code == 200
-    assert {tool["name"] for tool in tools_list.json()["result"]["tools"]} == {"echo", "ping"}
+    assert {tool["name"] for tool in tools_list.json()["result"]["tools"]} == {
+        "echo",
+        "ping",
+        "whoami",
+        "read_note",
+        "write_note",
+        "dangerous_delete",
+    }
     assert echo.status_code == 200
     assert echo.json()["result"]["structuredContent"] == {
         "message": "hello e2e",
@@ -94,7 +101,14 @@ async def test_oauth_v1_flow(client, monkeypatch):
     assert initialize.status_code == 200
     assert "OAuth 1.0a Authorization header" in initialize.json()["result"]["instructions"]
     assert tools_list.status_code == 200
-    assert {tool["name"] for tool in tools_list.json()["result"]["tools"]} == {"echo", "ping"}
+    assert {tool["name"] for tool in tools_list.json()["result"]["tools"]} == {
+        "echo",
+        "ping",
+        "whoami",
+        "read_note",
+        "write_note",
+        "dangerous_delete",
+    }
 
 
 @pytest.mark.asyncio
@@ -108,7 +122,7 @@ async def test_oauth_v2_auth_code_flow(client):
             "grant_types": ["authorization_code"],
             "response_types": ["code"],
             "token_endpoint_auth_method": "none",
-            "scope": "mcp:read",
+            "scope": "mcp:tools:list mcp:tools:echo mcp:tools:read",
         },
     )
     registration = register.json()
@@ -120,7 +134,7 @@ async def test_oauth_v2_auth_code_flow(client):
             "response_type": "code",
             "client_id": registration["client_id"],
             "redirect_uri": "https://client.example/phase-10/callback",
-            "scope": "mcp:read",
+            "scope": "mcp:tools:list mcp:tools:echo mcp:tools:read",
             "state": "phase-10-state",
             "code_challenge": code_challenge(verifier),
             "code_challenge_method": "S256",
@@ -162,7 +176,7 @@ async def test_oauth_v2_client_credentials_flow(client):
             "client_name": "Phase 10 Service Client",
             "grant_types": ["client_credentials"],
             "token_endpoint_auth_method": "client_secret_post",
-            "scope": "mcp:write",
+            "scope": "mcp:tools:write",
         },
     )
     registration = register.json()
@@ -172,7 +186,7 @@ async def test_oauth_v2_client_credentials_flow(client):
             "grant_type": "client_credentials",
             "client_id": registration["client_id"],
             "client_secret": registration["client_secret"],
-            "scope": "mcp:write",
+            "scope": "mcp:tools:write",
         },
     )
     mcp = await client.post(
@@ -184,7 +198,7 @@ async def test_oauth_v2_client_credentials_flow(client):
     assert register.status_code == 201
     assert registration["token_endpoint_auth_method"] == "client_secret_post"
     assert token.status_code == 200
-    assert token.json()["scope"] == "mcp:write"
+    assert token.json()["scope"] == "mcp:tools:write"
     assert mcp.status_code == 200
     assert "client credentials" in mcp.json()["result"]["instructions"]
 
@@ -206,7 +220,7 @@ async def test_oauth_v21_flow(client):
             "grant_types": ["authorization_code"],
             "response_types": ["code"],
             "token_endpoint_auth_method": "none",
-            "scope": "mcp:read",
+            "scope": "mcp:tools:list mcp:tools:echo mcp:tools:read",
         },
     )
     registration = register.json()
@@ -218,7 +232,7 @@ async def test_oauth_v21_flow(client):
             "response_type": "code",
             "client_id": registration["client_id"],
             "redirect_uri": "https://client.example/phase-10/oauth-v21/callback",
-            "scope": "mcp:read",
+            "scope": "mcp:tools:list mcp:tools:echo mcp:tools:read",
             "state": "phase-10-oauth-v21-state",
             "resource": "http://test/mcp/oauth-v21",
             "code_challenge": code_challenge(verifier),
@@ -272,7 +286,7 @@ async def test_dynamic_registration_flow(client):
             "client_name": "Phase 10 Confidential Client",
             "grant_types": ["client_credentials"],
             "token_endpoint_auth_method": "client_secret_post",
-            "scope": "mcp:write",
+            "scope": "mcp:tools:write",
         },
     )
 

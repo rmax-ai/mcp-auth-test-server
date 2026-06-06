@@ -14,7 +14,13 @@ async def test_oauth_protected_resource_metadata_document(client):
             "http://test/.well-known/oauth-authorization-server",
         ],
         "bearer_methods_supported": ["header"],
-        "scopes_supported": ["mcp:read", "mcp:write"],
+        "scopes_supported": [
+            "mcp:tools:list",
+            "mcp:tools:echo",
+            "mcp:tools:read",
+            "mcp:tools:write",
+            "mcp:tools:admin",
+        ],
     }
 
 
@@ -32,7 +38,13 @@ async def test_oauth_authorization_server_metadata_document(client):
         "grant_types_supported": ["authorization_code", "client_credentials"],
         "token_endpoint_auth_methods_supported": ["none", "client_secret_post"],
         "code_challenge_methods_supported": ["S256"],
-        "scopes_supported": ["mcp:read", "mcp:write"],
+        "scopes_supported": [
+            "mcp:tools:list",
+            "mcp:tools:echo",
+            "mcp:tools:read",
+            "mcp:tools:write",
+            "mcp:tools:admin",
+        ],
     }
 
 
@@ -50,7 +62,13 @@ async def test_oauth_v21_protected_resource_metadata_document(client):
             "http://test/.well-known/oauth-authorization-server?resource=http%3A%2F%2Ftest%2Fmcp%2Foauth-v21",
         ],
         "bearer_methods_supported": ["header"],
-        "scopes_supported": ["mcp:read", "mcp:write"],
+        "scopes_supported": [
+            "mcp:tools:list",
+            "mcp:tools:echo",
+            "mcp:tools:read",
+            "mcp:tools:write",
+            "mcp:tools:admin",
+        ],
     }
 
 
@@ -72,5 +90,11 @@ async def test_oauth_v21_authorization_server_metadata_document(client):
         "token_endpoint_auth_methods_supported": ["none"],
         "code_challenge_methods_supported": ["S256"],
         "resource_indicators_supported": True,
-        "scopes_supported": ["mcp:read", "mcp:write"],
+        "scopes_supported": [
+            "mcp:tools:list",
+            "mcp:tools:echo",
+            "mcp:tools:read",
+            "mcp:tools:write",
+            "mcp:tools:admin",
+        ],
     }

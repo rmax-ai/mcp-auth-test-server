@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from mcp_auth_test_server.auth.oauth import (
     AUTHORIZATION_CODE_GRANT_TYPE,
     CLIENT_CREDENTIALS_GRANT_TYPE,
+    DEFAULT_OAUTH_SCOPE,
     OAuthError,
     validate_scope,
 )
@@ -120,7 +121,7 @@ def register_dynamic_client(payload: dict[str, object]) -> ClientRecord:
         )
 
     client_name = _string_field(payload, "client_name")
-    scope = _string_field(payload, "scope") or "mcp:read"
+    scope = _string_field(payload, "scope") or DEFAULT_OAUTH_SCOPE
     validate_scope(scope)
 
     client_secret = None

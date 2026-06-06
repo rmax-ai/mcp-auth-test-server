@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from secrets import compare_digest, token_urlsafe
 
+from mcp_auth_test_server.auth.approval import ApprovalRecord
+from mcp_auth_test_server.auth.audit import AuditEvent, redact
+
 AUTHORIZATION_CODE_TTL_SECONDS = 300
 ACCESS_TOKEN_TTL_SECONDS = 3600
 
@@ -61,6 +64,8 @@ class OAuthTokenStore:
         self._clients: dict[str, ClientRecord] = {}
         self._authorization_codes: dict[str, AuthorizationCodeRecord] = {}
         self._access_tokens: dict[str, AccessTokenRecord] = {}
+        self._approval_records: list[ApprovalRecord] = []
+        self._audit_events: list[AuditEvent] = []
         self._seed_mock_clients()
 
     def reset(self) -> None:
@@ -69,6 +74,8 @@ class OAuthTokenStore:
         self._clients.clear()
         self._authorization_codes.clear()
         self._access_tokens.clear()
+        self._approval_records.clear()
+        self._audit_events.clear()
         self._seed_mock_clients()
 
     def register_client(
@@ -98,6 +105,15 @@ class OAuthTokenStore:
             client_secret_expires_at=0,
         )
         self._clients[record.client_id] = record
+        self._audit_events.append(
+            AuditEvent(
+                event_type="registration",
+                client_id=record.client_id,
+                scope=scope,
+                result="registered",
+                detail=f"auth_method={token_endpoint_auth_method} grants={grant_types}",
+            )
+        )
         return record
 
     def add_client(
@@ -165,6 +181,15 @@ class OAuthTokenStore:
             expires_at=self._now() + timedelta(seconds=AUTHORIZATION_CODE_TTL_SECONDS),
         )
         self._authorization_codes[record.code] = record
+        self._audit_events.append(
+            AuditEvent(
+                event_type="authorization_code_issued",
+                client_id=client_id,
+                scope=scope,
+                result="issued",
+                code_hash=redact(record.code),
+            )
+        )
         return record
 
     def consume_authorization_code(
@@ -206,6 +231,16 @@ class OAuthTokenStore:
             expires_at=self._now() + timedelta(seconds=ACCESS_TOKEN_TTL_SECONDS),
         )
         self._access_tokens[record.access_token] = record
+        self._audit_events.append(
+            AuditEvent(
+                event_type="token_issued",
+                client_id=client_id,
+                scope=scope,
+                grant_type=grant_type,
+                result="issued",
+                token_hash=redact(record.access_token),
+            )
+        )
         return record
 
     def get_access_token(self, token: str) -> AccessTokenRecord | None:
@@ -218,6 +253,31 @@ class OAuthTokenStore:
             self._access_tokens.pop(token, None)
             return None
         return record
+
+    def record_approval(self, record: ApprovalRecord) -> None:
+        """Persist a consent decision for audit / debug."""
+        self._approval_records.append(record)
+        self._audit_events.append(
+            AuditEvent(
+                event_type="approval",
+                client_id=record.client_id,
+                scope=record.scope,
+                result=record.decision,
+                detail=f"mode={record.mode.value} admin_confirmed={record.admin_scope_confirmed}",
+            )
+        )
+
+    def get_approval_records(self) -> list[ApprovalRecord]:
+        """Return all recorded approval decisions."""
+        return list(self._approval_records)
+
+    def get_audit_events(self) -> list[AuditEvent]:
+        """Return all recorded audit events."""
+        return list(self._audit_events)
+
+    def revoke_access_token(self, token: str) -> None:
+        """Remove an access token from the in-memory store (RFC 7009)."""
+        self._access_tokens.pop(token, None)
 
     @staticmethod
     def _now() -> datetime:
@@ -232,7 +292,7 @@ class OAuthTokenStore:
             grant_types=["authorization_code"],
             response_types=["code"],
             redirect_uris=["https://client.example/callback"],
-            scope="mcp:read",
+            scope="mcp:tools:list mcp:tools:echo mcp:tools:read",
             client_name="Phase 5 Public Client",
         )
         self.add_client(
@@ -242,7 +302,7 @@ class OAuthTokenStore:
             grant_types=["client_credentials"],
             response_types=[],
             redirect_uris=[],
-            scope="mcp:read mcp:write",
+            scope="mcp:tools:list mcp:tools:echo mcp:tools:read mcp:tools:write",
             client_name="Phase 6 Service Client",
         )
         self.add_client(
@@ -251,8 +311,38 @@ class OAuthTokenStore:
             grant_types=["authorization_code"],
             response_types=["code"],
             redirect_uris=["https://client.example/oauth-v21/callback"],
-            scope="mcp:read",
+            scope="mcp:tools:list mcp:tools:echo mcp:tools:read",
             client_name="Phase 7 Public Client",
+        )
+        # ── Spec-aligned fixture clients for CIMD-style resolution ──────
+        self.add_client(
+            client_id="dev-public-client",
+            token_endpoint_auth_method="none",
+            grant_types=["authorization_code"],
+            response_types=["code"],
+            redirect_uris=["http://localhost:3000/callback", "https://dev.example/callback"],
+            scope="mcp:tools:list mcp:tools:echo mcp:tools:read mcp:tools:write",
+            client_name="Dev Public Client (CIMD fixture)",
+        )
+        self.add_client(
+            client_id="dev-confidential-client",
+            client_secret="dev-confidential-secret",
+            token_endpoint_auth_method="client_secret_post",
+            grant_types=["authorization_code", "client_credentials"],
+            response_types=["code"],
+            redirect_uris=["http://localhost:3000/callback"],
+            scope="mcp:tools:list mcp:tools:echo mcp:tools:read mcp:tools:write",
+            client_name="Dev Confidential Client (CIMD fixture)",
+        )
+        self.add_client(
+            client_id="dev-admin-client",
+            client_secret="dev-admin-secret",
+            token_endpoint_auth_method="client_secret_post",
+            grant_types=["client_credentials"],
+            response_types=[],
+            redirect_uris=[],
+            scope="mcp:tools:list mcp:tools:echo mcp:tools:read mcp:tools:write mcp:tools:admin",
+            client_name="Dev Admin Client (CIMD fixture)",
         )
 
 

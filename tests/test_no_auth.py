@@ -29,7 +29,14 @@ async def test_tools_list_exposes_echo_and_ping(client):
     assert response.status_code == 200
     data = response.json()
     tools = {tool["name"]: tool for tool in data["result"]["tools"]}
-    assert set(tools) == {"echo", "ping"}
+    assert set(tools) == {
+        "echo",
+        "ping",
+        "whoami",
+        "read_note",
+        "write_note",
+        "dangerous_delete",
+    }
     assert tools["echo"]["inputSchema"]["type"] == "object"
     assert tools["ping"]["inputSchema"]["additionalProperties"] is False
 

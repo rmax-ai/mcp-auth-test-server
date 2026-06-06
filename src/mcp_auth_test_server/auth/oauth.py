@@ -11,7 +11,7 @@ from mcp_auth_test_server.auth.bearer import BearerAuthError
 from mcp_auth_test_server.auth.token_store import AccessTokenRecord, oauth_token_store
 from mcp_auth_test_server.discovery import MOCK_SCOPES
 
-DEFAULT_OAUTH_SCOPE = MOCK_SCOPES[0]
+DEFAULT_OAUTH_SCOPE = MOCK_SCOPES[0]  # "mcp:tools:list"
 AUTHORIZATION_CODE_GRANT_TYPE = "authorization_code"
 CLIENT_CREDENTIALS_GRANT_TYPE = "client_credentials"
 

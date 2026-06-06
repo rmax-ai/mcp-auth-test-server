@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from mcp_auth_test_server.auth.dynamic_registration import (
     router as dynamic_registration_router,
 )
+from mcp_auth_test_server.debug import router as debug_router
 from mcp_auth_test_server.discovery.auth_server_metadata import (
     router as auth_server_metadata_router,
 )
@@ -32,6 +33,7 @@ app.include_router(oauth_v2_3l_router)
 app.include_router(oauth_v21_router)
 app.include_router(dynamic_registration_router)
 app.include_router(protected_resource_router)
+app.include_router(debug_router)
 app.include_router(auth_server_metadata_router)
 
 

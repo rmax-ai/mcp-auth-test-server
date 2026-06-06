@@ -6,8 +6,33 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
+from mcp_auth_test_server.mcp.policy import (
+    check_argument_policy,
+    check_tool_scope,
+    filter_tools_by_scope,
+)
+
 JsonObject = dict[str, Any]
 ToolHandler = Callable[[JsonObject], Awaitable[JsonObject]]
+
+
+@dataclass(slots=True)
+class ArgumentConstraint:
+    """Constraint on a tool argument value."""
+
+    param: str
+    constraint_type: str  # "required", "min_length", "max_length", "pattern", "equals"
+    value: Any
+
+
+@dataclass(slots=True)
+class ToolArgumentPolicy:
+    """Argument validation policy for a tool."""
+
+    required_params: list[str]
+    constraints: list[ArgumentConstraint]
+    blocked_patterns: list[str]  # content patterns to reject
+    environment_flag: str | None = None  # env var that must be set to allow
 
 
 @dataclass(slots=True)
@@ -18,6 +43,8 @@ class ToolDefinition:
     description: str
     input_schema: JsonObject
     handler: ToolHandler
+    required_scope: str = ""
+    argument_policy: ToolArgumentPolicy | None = None
 
     def as_mcp_tool(self) -> JsonObject:
         return {
@@ -61,8 +88,14 @@ class BaseMCPHandler:
         self.instructions = instructions
         self._tools = {tool.name: tool for tool in tools}
 
-    async def handle_message(self, payload: Any) -> tuple[int | None, JsonObject | None]:
-        """Validate and dispatch a JSON-RPC request body."""
+    async def handle_message(
+        self, payload: Any, *, token_scope: str | None = None
+    ) -> tuple[int | None, JsonObject | None]:
+        """Validate and dispatch a JSON-RPC request body.
+
+        When *token_scope* is provided the handler enforces scope-based
+        access control and tool argument policies.
+        """
 
         if not isinstance(payload, dict):
             raise JsonRpcError(-32600, "Invalid Request")
@@ -77,7 +110,7 @@ class BaseMCPHandler:
         if not isinstance(params, dict):
             raise JsonRpcError(-32602, "Invalid params")
 
-        result = await self._dispatch(method=method, params=params)
+        result = await self._dispatch(method=method, params=params, token_scope=token_scope)
         if request_id is None:
             return None, None
         return 200, {"jsonrpc": "2.0", "id": request_id, "result": result}
@@ -88,13 +121,15 @@ class BaseMCPHandler:
         if not isinstance(payload.get("method"), str):
             raise JsonRpcError(-32600, "Invalid Request")
 
-    async def _dispatch(self, *, method: str, params: JsonObject) -> JsonObject:
+    async def _dispatch(
+        self, *, method: str, params: JsonObject, token_scope: str | None = None
+    ) -> JsonObject:
         if method == "initialize":
             return self._handle_initialize()
         if method == "tools/list":
-            return self._handle_tools_list()
+            return self._handle_tools_list(token_scope=token_scope)
         if method == "tools/call":
-            return await self._handle_tools_call(params)
+            return await self._handle_tools_call(params, token_scope=token_scope)
         raise JsonRpcError(-32601, "Method not found")
 
     def _handle_initialize(self) -> JsonObject:
@@ -110,10 +145,13 @@ class BaseMCPHandler:
             "instructions": self.instructions,
         }
 
-    def _handle_tools_list(self) -> JsonObject:
-        return {"tools": [tool.as_mcp_tool() for tool in self._tools.values()]}
+    def _handle_tools_list(self, *, token_scope: str | None = None) -> JsonObject:
+        allowed = filter_tools_by_scope(self._tools, token_scope)
+        return {"tools": [tool.as_mcp_tool() for tool in allowed]}
 
-    async def _handle_tools_call(self, params: JsonObject) -> JsonObject:
+    async def _handle_tools_call(
+        self, params: JsonObject, *, token_scope: str | None = None
+    ) -> JsonObject:
         name = params.get("name")
         arguments = params.get("arguments", {})
 
@@ -125,6 +163,15 @@ class BaseMCPHandler:
         tool = self._tools.get(name)
         if tool is None:
             raise JsonRpcError(-32601, f"Unknown tool: {name}")
+
+        check_tool_scope(tool, token_scope)
+
+        if tool.argument_policy is not None:
+            check_argument_policy(
+                tool.argument_policy,
+                arguments,
+                tool_name=tool.name,
+            )
 
         structured_content = await tool.handler(arguments)
         return {

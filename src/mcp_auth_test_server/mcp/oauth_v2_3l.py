@@ -7,6 +7,13 @@ from urllib.parse import parse_qs
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
+from mcp_auth_test_server.auth.approval import (
+    ApprovalMode,
+    ApprovalRecord,
+    has_admin_scope,
+    resolve_approval_mode,
+)
+from mcp_auth_test_server.auth.audit import AuditEvent
 from mcp_auth_test_server.auth.bearer import BearerAuthError
 from mcp_auth_test_server.auth.dynamic_registration import (
     validate_registered_authorization_client,
@@ -15,6 +22,7 @@ from mcp_auth_test_server.auth.dynamic_registration import (
 from mcp_auth_test_server.auth.oauth import (
     AUTHORIZATION_CODE_GRANT_TYPE,
     CLIENT_CREDENTIALS_GRANT_TYPE,
+    DEFAULT_OAUTH_SCOPE,
     OAuthError,
     build_redirect_uri,
     validate_access_token_grant_type,
@@ -106,7 +114,42 @@ async def authorize(request: Request) -> Response:
     except OAuthError as exc:
         return JSONResponse(status_code=exc.status_code, content=exc.as_response())
 
-    if request.query_params.get("auto_approve") == "true":
+    approval_mode = resolve_approval_mode(dict(request.query_params))
+
+    # ── auto_deny: immediately reject without showing consent page ─────────
+    if approval_mode == ApprovalMode.AUTO_DENY:
+        oauth_token_store.record_approval(
+            ApprovalRecord(
+                client_id=auth_request.client_id,
+                scope=auth_request.scope,
+                decision="denied",
+                mode=ApprovalMode.AUTO_DENY,
+            )
+        )
+        return RedirectResponse(
+            url=build_redirect_uri(
+                auth_request.redirect_uri,
+                state=auth_request.state,
+                error="access_denied",
+            ),
+            status_code=302,
+        )
+
+    # ── auto_approve: auto-issue code unless admin scope is requested ──────
+    if approval_mode == ApprovalMode.AUTO_APPROVE:
+        # Admin scopes always require explicit manual consent
+        if has_admin_scope(auth_request.scope):
+            return HTMLResponse(
+                _render_consent_page(
+                    client_id=auth_request.client_id,
+                    redirect_uri=auth_request.redirect_uri,
+                    scope=auth_request.scope,
+                    state=auth_request.state,
+                    code_challenge=auth_request.code_challenge,
+                    code_challenge_method=auth_request.code_challenge_method,
+                ),
+            )
+
         record = oauth_token_store.issue_authorization_code(
             client_id=auth_request.client_id,
             redirect_uri=auth_request.redirect_uri,
@@ -114,6 +157,15 @@ async def authorize(request: Request) -> Response:
             resource=MOCK_AUTHORIZATION_ENDPOINT_PATH,
             code_challenge=auth_request.code_challenge,
             code_challenge_method=auth_request.code_challenge_method,
+        )
+        oauth_token_store.record_approval(
+            ApprovalRecord(
+                client_id=auth_request.client_id,
+                scope=auth_request.scope,
+                decision="approved",
+                mode=ApprovalMode.AUTO_APPROVE,
+                admin_scope_confirmed=False,
+            )
         )
         return RedirectResponse(
             url=build_redirect_uri(
@@ -124,6 +176,7 @@ async def authorize(request: Request) -> Response:
             status_code=302,
         )
 
+    # ── manual: render consent page (default) ──────────────────────────────
     return HTMLResponse(
         _render_consent_page(
             client_id=auth_request.client_id,
@@ -165,7 +218,36 @@ async def authorize_consent(request: Request) -> Response:
         return JSONResponse(status_code=exc.status_code, content=exc.as_response())
 
     decision = _form_field(form_data, "decision")
+    admin_confirmed = _form_field(form_data, "admin_confirmed") == "true"
+
     if decision != "approve":
+        oauth_token_store.record_approval(
+            ApprovalRecord(
+                client_id=auth_request.client_id,
+                scope=auth_request.scope,
+                decision="denied",
+                mode=ApprovalMode.MANUAL,
+            )
+        )
+        return RedirectResponse(
+            url=build_redirect_uri(
+                auth_request.redirect_uri,
+                state=auth_request.state,
+                error="access_denied",
+            ),
+            status_code=302,
+        )
+
+    # Admin scopes require explicit admin_confirmed flag
+    if has_admin_scope(auth_request.scope) and not admin_confirmed:
+        oauth_token_store.record_approval(
+            ApprovalRecord(
+                client_id=auth_request.client_id,
+                scope=auth_request.scope,
+                decision="denied",
+                mode=ApprovalMode.MANUAL,
+            )
+        )
         return RedirectResponse(
             url=build_redirect_uri(
                 auth_request.redirect_uri,
@@ -182,6 +264,15 @@ async def authorize_consent(request: Request) -> Response:
         resource=MOCK_AUTHORIZATION_ENDPOINT_PATH,
         code_challenge=auth_request.code_challenge,
         code_challenge_method=auth_request.code_challenge_method,
+    )
+    oauth_token_store.record_approval(
+        ApprovalRecord(
+            client_id=auth_request.client_id,
+            scope=auth_request.scope,
+            decision="approved",
+            mode=ApprovalMode.MANUAL,
+            admin_scope_confirmed=has_admin_scope(auth_request.scope),
+        )
     )
     return RedirectResponse(
         url=build_redirect_uri(
@@ -263,7 +354,7 @@ async def token(request: Request) -> JSONResponse:
         )
 
     if grant_type == CLIENT_CREDENTIALS_GRANT_TYPE:
-        requested_scope = _form_field(form_data, "scope") or "mcp:read"
+        requested_scope = _form_field(form_data, "scope") or DEFAULT_OAUTH_SCOPE
 
         if not client_id or not client_secret:
             error = OAuthError(
@@ -310,6 +401,30 @@ async def token(request: Request) -> JSONResponse:
     return JSONResponse(status_code=error.status_code, content=error.as_response())
 
 
+@router.post("/oauth/revoke")
+async def revoke_token(request: Request) -> JSONResponse:
+    """RFC 7009 token revocation stub.
+
+    Accepts a ``token`` form parameter and, if the token is known,
+    removes it from the in-memory store.  Always returns 200 to avoid
+    leaking whether a token was valid (per RFC 7009 Section 2.2).
+    """
+    form_data = parse_qs((await request.body()).decode("utf-8"), keep_blank_values=True)
+    token_to_revoke = _form_field(form_data, "token")
+    token_hint = _form_field(form_data, "token_type_hint")
+
+    if token_to_revoke:
+        oauth_token_store.revoke_access_token(token_to_revoke)
+        oauth_token_store._audit_events.append(  # noqa: SLF001
+            AuditEvent(
+                event_type="token_revoked",
+                detail=f"token_type_hint={token_hint}" if token_hint else None,
+            )
+        )
+
+    return JSONResponse(status_code=200, content={})
+
+
 @router.post("/mcp/oauth-v2-auth-code")
 async def oauth_v2_auth_code_endpoint(request: Request) -> Response:
     """Require an issued OAuth access token before handling MCP JSON-RPC."""
@@ -334,7 +449,9 @@ async def oauth_v2_auth_code_endpoint(request: Request) -> Response:
         return JSONResponse(status_code=400, content=error.as_response(None))
 
     try:
-        status_code, response_payload = await handler.handle_message(payload)
+        status_code, response_payload = await handler.handle_message(
+            payload, token_scope=token_record.scope
+        )
     except JsonRpcError as exc:
         return JSONResponse(status_code=400, content=exc.as_response(payload.get("id")))
 

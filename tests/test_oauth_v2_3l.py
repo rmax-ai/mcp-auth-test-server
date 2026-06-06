@@ -20,7 +20,7 @@ def _authorization_params(**overrides: str) -> dict[str, str]:
         "response_type": "code",
         "client_id": "phase-5-public-client",
         "redirect_uri": "https://client.example/callback",
-        "scope": "mcp:read",
+        "scope": "mcp:tools:list mcp:tools:echo mcp:tools:read",
         "state": "phase-5-state",
         "code_challenge": _code_challenge(verifier),
         "code_challenge_method": "S256",
@@ -101,7 +101,7 @@ async def test_full_auth_code_pkce_flow_allows_mcp_access(client):
     assert token_response.status_code == 200
     token_body = token_response.json()
     assert token_body["token_type"] == "Bearer"
-    assert token_body["scope"] == "mcp:read"
+    assert token_body["scope"] == "mcp:tools:list mcp:tools:echo mcp:tools:read"
 
     mcp_response = await client.post(
         "/mcp/oauth-v2-auth-code",

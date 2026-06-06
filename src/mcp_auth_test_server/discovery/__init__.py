@@ -17,7 +17,13 @@ OAUTH_V21_RESOURCE_PATH = "/mcp/oauth-v21"
 OAUTH_V21_AUTHORIZATION_ENDPOINT_PATH = "/oauth-v21/authorize"
 OAUTH_V21_TOKEN_ENDPOINT_PATH = "/oauth-v21/token"
 
-MOCK_SCOPES = ["mcp:read", "mcp:write"]
+MOCK_SCOPES = [
+    "mcp:tools:list",
+    "mcp:tools:echo",
+    "mcp:tools:read",
+    "mcp:tools:write",
+    "mcp:tools:admin",
+]
 
 
 def get_origin_url(request: Request) -> str:

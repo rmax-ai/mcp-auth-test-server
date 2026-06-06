@@ -21,7 +21,7 @@ async def test_client_credentials_token_exchange_returns_access_token(client):
             "grant_type": "client_credentials",
             "client_id": "phase-6-service-client",
             "client_secret": "phase-6-service-secret",
-            "scope": "mcp:write",
+            "scope": "mcp:tools:write",
         },
     )
 
@@ -30,7 +30,7 @@ async def test_client_credentials_token_exchange_returns_access_token(client):
         "access_token": response.json()["access_token"],
         "token_type": "Bearer",
         "expires_in": 3600,
-        "scope": "mcp:write",
+        "scope": "mcp:tools:write",
     }
 
 
@@ -85,7 +85,7 @@ async def test_client_credentials_endpoint_rejects_auth_code_token(client):
             "response_type": "code",
             "client_id": "phase-5-public-client",
             "redirect_uri": "https://client.example/callback",
-            "scope": "mcp:read",
+            "scope": "mcp:tools:list mcp:tools:echo mcp:tools:read",
             "state": "phase-6-state",
             "code_challenge": _code_challenge(verifier),
             "code_challenge_method": "S256",

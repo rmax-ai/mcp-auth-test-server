@@ -50,7 +50,9 @@ async def oauth_v2_client_credentials_endpoint(request: Request) -> Response:
         return JSONResponse(status_code=400, content=error.as_response(None))
 
     try:
-        status_code, response_payload = await handler.handle_message(payload)
+        status_code, response_payload = await handler.handle_message(
+            payload, token_scope=token_record.scope
+        )
     except JsonRpcError as exc:
         return JSONResponse(status_code=400, content=exc.as_response(payload.get("id")))
 

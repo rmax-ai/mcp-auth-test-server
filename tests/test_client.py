@@ -112,7 +112,7 @@ def run_oauth_v2_3l(client: httpx.Client, *, base_url: str) -> SchemeResult:
             "response_type": "code",
             "client_id": registration.json()["client_id"],
             "redirect_uri": "https://client.example/live/callback",
-            "scope": "mcp:read",
+            "scope": "mcp:tools:list mcp:tools:echo mcp:tools:read",
             "state": "phase-10-live-oauth-v2-state",
             "code_challenge": code_challenge(verifier),
             "code_challenge_method": "S256",
@@ -151,7 +151,7 @@ def run_oauth_v2_2l(client: httpx.Client) -> SchemeResult:
             "client_name": "Phase 10 Live Service Client",
             "grant_types": ["client_credentials"],
             "token_endpoint_auth_method": "client_secret_post",
-            "scope": "mcp:write",
+            "scope": "mcp:tools:write",
         },
     )
     _assert_status(registration, 201)
@@ -162,7 +162,7 @@ def run_oauth_v2_2l(client: httpx.Client) -> SchemeResult:
             "grant_type": "client_credentials",
             "client_id": registration.json()["client_id"],
             "client_secret": registration.json()["client_secret"],
-            "scope": "mcp:write",
+            "scope": "mcp:tools:write",
         },
     )
     _assert_status(token, 200)
@@ -205,7 +205,7 @@ def run_oauth_v21(client: httpx.Client, *, base_url: str) -> SchemeResult:
             "response_type": "code",
             "client_id": registration.json()["client_id"],
             "redirect_uri": "https://client.example/live/oauth-v21/callback",
-            "scope": "mcp:read",
+            "scope": "mcp:tools:list mcp:tools:echo mcp:tools:read",
             "state": "phase-10-live-oauth-v21-state",
             "resource": f"{base_url}/mcp/oauth-v21",
             "code_challenge": code_challenge(verifier),

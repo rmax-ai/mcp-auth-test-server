@@ -48,8 +48,12 @@ _NOTE_STORAGE: dict[str, str] = {}
 
 
 async def echo_tool(arguments: dict[str, Any]) -> dict[str, Any]:
-    """Return the exact arguments provided by the caller."""
-    return arguments
+    """Return caller-provided arguments, with optional message uppercasing."""
+
+    result = dict(arguments)
+    if result.get("uppercase") and isinstance(result.get("message"), str):
+        result["message"] = result["message"].upper()
+    return result
 
 
 async def ping_tool(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -107,17 +111,36 @@ def get_core_tools() -> list[ToolDefinition]:
     return [
         ToolDefinition(
             name="echo",
-            description="Return the provided arguments unchanged.",
+            description=(
+                "Echo test tool that returns caller arguments and can optionally "
+                "uppercase the `message` field."
+            ),
             input_schema={
                 "type": "object",
-                "additionalProperties": True,
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "Message to echo back in the response.",
+                    },
+                    "count": {
+                        "type": "integer",
+                        "description": "Optional counter value echoed back as-is.",
+                    },
+                    "uppercase": {
+                        "type": "boolean",
+                        "description": "When true, `message` is returned in uppercase.",
+                        "default": False,
+                    },
+                },
+                "required": ["message"],
+                "additionalProperties": False,
             },
             handler=echo_tool,
             required_scope=TOOL_SCOPE_MAP["echo"],
         ),
         ToolDefinition(
             name="ping",
-            description='Return {"pong": true}.',
+            description='Connectivity probe that always returns `{ "pong": true }`.',
             input_schema={
                 "type": "object",
                 "properties": {},

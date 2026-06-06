@@ -11,10 +11,15 @@ from mcp_auth_test_server.auth.oauth import (
     validate_access_token_grant_type,
     validate_access_token_header,
 )
-from mcp_auth_test_server.mcp.base import BaseMCPHandler, JsonRpcError
+from mcp_auth_test_server.mcp.base import BaseMCPHandler, JsonRpcError, RequestAuditContext
 from mcp_auth_test_server.mcp.tools import get_core_tools
+from mcp_auth_test_server.openapi_examples import (
+    MCP_REQUEST_BODY,
+    MCP_RESPONSES,
+    UNAUTHORIZED_RESPONSE,
+)
 
-router = APIRouter()
+router = APIRouter(tags=["OAuth 2.0: Client Credentials"])
 
 handler = BaseMCPHandler(
     server_name="mcp-auth-test-server",
@@ -26,7 +31,14 @@ handler = BaseMCPHandler(
 )
 
 
-@router.post("/mcp/oauth-v2-client-creds")
+@router.post(
+    "/mcp/oauth-v2-client-creds",
+    responses={
+        **MCP_RESPONSES,
+        401: UNAUTHORIZED_RESPONSE,
+    },
+    openapi_extra=MCP_REQUEST_BODY,
+)
 async def oauth_v2_client_credentials_endpoint(request: Request) -> Response:
     """Require a client-credentials OAuth access token before handling MCP JSON-RPC."""
 
@@ -43,6 +55,19 @@ async def oauth_v2_client_credentials_endpoint(request: Request) -> Response:
             headers={"WWW-Authenticate": exc.to_www_authenticate()},
         )
 
+    source_ip = request.client.host if request.client is not None else "-"
+    audit_context = RequestAuditContext(
+        endpoint="/mcp/oauth-v2-client-creds",
+        auth_scheme="oauth2",
+        caller=token_record.client_id,
+        source_ip=source_ip,
+        client_id=token_record.client_id,
+        scope=token_record.scope,
+        grant_type=token_record.grant_type,
+        audience=token_record.audience or "-",
+        issuer=token_record.issuer or "-",
+    )
+
     try:
         payload = await request.json()
     except ValueError as exc:
@@ -51,7 +76,8 @@ async def oauth_v2_client_credentials_endpoint(request: Request) -> Response:
 
     try:
         status_code, response_payload = await handler.handle_message(
-            payload, token_scope=token_record.scope
+            payload,
+            audit_context=audit_context,
         )
     except JsonRpcError as exc:
         return JSONResponse(status_code=400, content=exc.as_response(payload.get("id")))

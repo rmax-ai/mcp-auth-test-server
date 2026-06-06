@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from secrets import token_urlsafe
 
 from fastapi import APIRouter, Request
@@ -10,18 +11,30 @@ from fastapi.responses import JSONResponse
 from mcp_auth_test_server.auth.oauth import (
     AUTHORIZATION_CODE_GRANT_TYPE,
     CLIENT_CREDENTIALS_GRANT_TYPE,
-    DEFAULT_OAUTH_SCOPE,
+    DEVICE_CODE_GRANT_TYPE,
+    REFRESH_TOKEN_GRANT_TYPE,
     OAuthError,
     validate_scope,
 )
 from mcp_auth_test_server.auth.token_store import ClientRecord, oauth_token_store
 from mcp_auth_test_server.discovery import MOCK_REGISTRATION_ENDPOINT_PATH
+from mcp_auth_test_server.openapi_examples import (
+    DYNAMIC_CLIENT_REGISTRATION_REQUEST_BODY,
+    DYNAMIC_CLIENT_REGISTRATION_RESPONSE,
+)
+
+logger = logging.getLogger("mcp_auth_test_server.audit")
 
 SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS = {"none", "client_secret_post"}
-SUPPORTED_GRANT_TYPES = {AUTHORIZATION_CODE_GRANT_TYPE, CLIENT_CREDENTIALS_GRANT_TYPE}
+SUPPORTED_GRANT_TYPES = {
+    AUTHORIZATION_CODE_GRANT_TYPE,
+    CLIENT_CREDENTIALS_GRANT_TYPE,
+    DEVICE_CODE_GRANT_TYPE,
+    REFRESH_TOKEN_GRANT_TYPE,
+}
 SUPPORTED_RESPONSE_TYPES = {"code"}
 
-router = APIRouter()
+router = APIRouter(tags=["Auth: OAuth"])
 
 
 def _string_list(payload: dict[str, object], field: str) -> list[str] | None:
@@ -53,9 +66,7 @@ def _string_field(payload: dict[str, object], field: str) -> str | None:
 def register_dynamic_client(payload: dict[str, object]) -> ClientRecord:
     """Validate mock registration metadata and persist a client record."""
 
-    token_endpoint_auth_method = (
-        _string_field(payload, "token_endpoint_auth_method") or "none"
-    )
+    token_endpoint_auth_method = _string_field(payload, "token_endpoint_auth_method") or "none"
     if token_endpoint_auth_method not in SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS:
         raise OAuthError(
             error="invalid_client_metadata",
@@ -73,6 +84,16 @@ def register_dynamic_client(payload: dict[str, object]) -> ClientRecord:
             description=f"unsupported grant_types: {', '.join(unsupported_grants)}",
             status_code=400,
         )
+    if (
+        REFRESH_TOKEN_GRANT_TYPE in grant_types
+        and AUTHORIZATION_CODE_GRANT_TYPE not in grant_types
+        and DEVICE_CODE_GRANT_TYPE not in grant_types
+    ):
+        raise OAuthError(
+            error="invalid_client_metadata",
+            description="refresh_token requires authorization_code or device_code",
+            status_code=400,
+        )
 
     response_types = _string_list(payload, "response_types")
     if response_types is None:
@@ -86,13 +107,21 @@ def register_dynamic_client(payload: dict[str, object]) -> ClientRecord:
         )
 
     redirect_uris = _string_list(payload, "redirect_uris") or []
-    if AUTHORIZATION_CODE_GRANT_TYPE in grant_types and not redirect_uris:
+    if (
+        AUTHORIZATION_CODE_GRANT_TYPE in grant_types
+        and DEVICE_CODE_GRANT_TYPE not in grant_types
+        and not redirect_uris
+    ):
         raise OAuthError(
             error="invalid_redirect_uri",
             description="redirect_uris is required for authorization_code clients",
             status_code=400,
         )
-    if AUTHORIZATION_CODE_GRANT_TYPE not in grant_types and redirect_uris:
+    if (
+        AUTHORIZATION_CODE_GRANT_TYPE not in grant_types
+        and DEVICE_CODE_GRANT_TYPE not in grant_types
+        and redirect_uris
+    ):
         raise OAuthError(
             error="invalid_client_metadata",
             description="redirect_uris is only supported for authorization_code clients",
@@ -117,6 +146,15 @@ def register_dynamic_client(payload: dict[str, object]) -> ClientRecord:
         raise OAuthError(
             error="invalid_client_metadata",
             description="client_credentials requires token_endpoint_auth_method client_secret_post",
+            status_code=400,
+        )
+    if (
+        DEVICE_CODE_GRANT_TYPE in grant_types
+        and token_endpoint_auth_method != "none"
+    ):
+        raise OAuthError(
+            error="invalid_client_metadata",
+            description="device_code requires token_endpoint_auth_method none",
             status_code=400,
         )
 
@@ -271,7 +309,11 @@ def registration_response(client: ClientRecord) -> dict[str, object]:
     return response
 
 
-@router.post(MOCK_REGISTRATION_ENDPOINT_PATH)
+@router.post(
+    MOCK_REGISTRATION_ENDPOINT_PATH,
+    responses=DYNAMIC_CLIENT_REGISTRATION_RESPONSE,
+    openapi_extra=DYNAMIC_CLIENT_REGISTRATION_REQUEST_BODY,
+)
 async def register_client(request: Request) -> JSONResponse:
     """Register a mock OAuth client for later authorization or token calls."""
 
@@ -297,5 +339,17 @@ async def register_client(request: Request) -> JSONResponse:
         client = register_dynamic_client(payload)
     except OAuthError as exc:
         return JSONResponse(status_code=exc.status_code, content=exc.as_response())
+
+    logger.info(
+        "oauth client registered endpoint=%s client_id=%s client_name=%s auth_method=%s "
+        "grant_types=%s redirect_uri_count=%s scope=%s",
+        MOCK_REGISTRATION_ENDPOINT_PATH,
+        client.client_id,
+        client.client_name or "-",
+        client.token_endpoint_auth_method,
+        list(client.grant_types),
+        len(client.redirect_uris),
+        client.scope,
+    )
 
     return JSONResponse(status_code=201, content=registration_response(client))

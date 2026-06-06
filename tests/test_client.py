@@ -9,19 +9,16 @@ import httpx
 
 from tests.flow_helpers import (
     bearer_headers,
-    build_oauth_v1_header,
     code_challenge,
     jsonrpc_payload,
     redirect_query,
 )
 
 SCHEMES = (
-    "no-auth",
     "bearer-token",
-    "oauth-v1",
-    "oauth-v2-3l",
-    "oauth-v2-2l",
-    "oauth-v21",
+    "oauth-auth-code",
+    "oauth-client-creds",
+    "oauth-device-flow",
     "dynamic-registration",
 )
 
@@ -48,49 +45,17 @@ def _assert_status(response: httpx.Response, expected: int) -> None:
         )
 
 
-def run_no_auth(client: httpx.Client) -> SchemeResult:
-    initialize = client.post(
-        "/mcp/no-auth",
-        json=jsonrpc_payload(request_id="live-no-auth-init", method="initialize"),
-    )
-    _assert_status(initialize, 200)
-
-    echo = client.post(
-        "/mcp/no-auth",
-        json=jsonrpc_payload(
-            request_id="live-no-auth-echo",
-            method="tools/call",
-            params={"name": "echo", "arguments": {"message": "live-check", "count": 1}},
-        ),
-    )
-    _assert_status(echo, 200)
-    return SchemeResult("no-auth", "initialize + echo succeeded")
-
-
 def run_bearer_token(client: httpx.Client) -> SchemeResult:
-    discovery = client.get("/.well-known/oauth-protected-resource")
-    _assert_status(discovery, 200)
-
     initialize = client.post(
         "/mcp/bearer-token",
         headers=bearer_headers(),
         json=jsonrpc_payload(request_id="live-bearer-init", method="initialize"),
     )
     _assert_status(initialize, 200)
-    return SchemeResult("bearer-token", "discovery + initialize succeeded")
+    return SchemeResult("bearer-token", "initialize succeeded")
 
 
-def run_oauth_v1(client: httpx.Client, *, base_url: str) -> SchemeResult:
-    initialize = client.post(
-        "/mcp/oauth-v1",
-        headers={"Authorization": build_oauth_v1_header(url=f"{base_url}/mcp/oauth-v1")},
-        json=jsonrpc_payload(request_id="live-oauth-v1-init", method="initialize"),
-    )
-    _assert_status(initialize, 200)
-    return SchemeResult("oauth-v1", "signed initialize succeeded")
-
-
-def run_oauth_v2_3l(client: httpx.Client, *, base_url: str) -> SchemeResult:
+def run_oauth_auth_code(client: httpx.Client, *, base_url: str) -> SchemeResult:
     metadata = client.get("/.well-known/oauth-authorization-server")
     _assert_status(metadata, 200)
     registration = client.post(
@@ -104,7 +69,7 @@ def run_oauth_v2_3l(client: httpx.Client, *, base_url: str) -> SchemeResult:
         },
     )
     _assert_status(registration, 201)
-    verifier = "phase-10-live-oauth-v2-verifier"
+    verifier = "phase-10-live-oauth-verifier"
 
     authorize = client.get(
         _path_from_url(metadata.json()["authorization_endpoint"], base_url),
@@ -112,8 +77,9 @@ def run_oauth_v2_3l(client: httpx.Client, *, base_url: str) -> SchemeResult:
             "response_type": "code",
             "client_id": registration.json()["client_id"],
             "redirect_uri": "https://client.example/live/callback",
-            "scope": "mcp:tools:list mcp:tools:echo mcp:tools:read",
-            "state": "phase-10-live-oauth-v2-state",
+            "scope": "mcp:read",
+            "state": "phase-10-live-oauth-state",
+            "resource": f"{base_url}/mcp/oauth",
             "code_challenge": code_challenge(verifier),
             "code_challenge_method": "S256",
             "auto_approve": "true",
@@ -131,20 +97,21 @@ def run_oauth_v2_3l(client: httpx.Client, *, base_url: str) -> SchemeResult:
             "redirect_uri": "https://client.example/live/callback",
             "client_id": registration.json()["client_id"],
             "code_verifier": verifier,
+            "resource": f"{base_url}/mcp/oauth",
         },
     )
     _assert_status(token, 200)
 
     initialize = client.post(
-        "/mcp/oauth-v2-auth-code",
+        "/mcp/oauth",
         headers={"Authorization": f"Bearer {token.json()['access_token']}"},
-        json=jsonrpc_payload(request_id="live-oauth-v2-init", method="initialize"),
+        json=jsonrpc_payload(request_id="live-oauth-init", method="initialize"),
     )
     _assert_status(initialize, 200)
-    return SchemeResult("oauth-v2-3l", "discover/register/authorize/token/access succeeded")
+    return SchemeResult("oauth-auth-code", "discover/register/authorize/token/access succeeded")
 
 
-def run_oauth_v2_2l(client: httpx.Client) -> SchemeResult:
+def run_oauth_client_creds(client: httpx.Client) -> SchemeResult:
     registration = client.post(
         "/oauth/register",
         json={
@@ -168,75 +135,42 @@ def run_oauth_v2_2l(client: httpx.Client) -> SchemeResult:
     _assert_status(token, 200)
 
     initialize = client.post(
-        "/mcp/oauth-v2-client-creds",
+        "/mcp/oauth",
         headers={"Authorization": f"Bearer {token.json()['access_token']}"},
         json=jsonrpc_payload(request_id="live-client-creds-init", method="initialize"),
     )
     _assert_status(initialize, 200)
-    return SchemeResult("oauth-v2-2l", "register/token/access succeeded")
+    return SchemeResult("oauth-client-creds", "register/token/access succeeded")
 
 
-def run_oauth_v21(client: httpx.Client, *, base_url: str) -> SchemeResult:
-    resource_metadata = client.get(
-        "/.well-known/oauth-protected-resource",
-        params={"resource": f"{base_url}/mcp/oauth-v21"},
+def run_oauth_device_flow(client: httpx.Client) -> SchemeResult:
+    authorize = client.post(
+        "/oauth/device/authorize",
+        data={"client_id": "phase-11-device-client"},
     )
-    _assert_status(resource_metadata, 200)
-    auth_server = client.get(
-        _path_from_url(resource_metadata.json()["authorization_servers"][0], base_url)
-    )
-    _assert_status(auth_server, 200)
-    registration = client.post(
-        _path_from_url(auth_server.json()["registration_endpoint"], base_url),
-        json={
-            "client_name": "Phase 10 Live OAuth 2.1 Client",
-            "redirect_uris": ["https://client.example/live/oauth-v21/callback"],
-            "grant_types": ["authorization_code"],
-            "response_types": ["code"],
-            "token_endpoint_auth_method": "none",
-        },
-    )
-    _assert_status(registration, 201)
-    verifier = "phase-10-live-oauth-v21-verifier"
+    _assert_status(authorize, 200)
 
-    authorize = client.get(
-        _path_from_url(auth_server.json()["authorization_endpoint"], base_url),
-        params={
-            "response_type": "code",
-            "client_id": registration.json()["client_id"],
-            "redirect_uri": "https://client.example/live/oauth-v21/callback",
-            "scope": "mcp:tools:list mcp:tools:echo mcp:tools:read",
-            "state": "phase-10-live-oauth-v21-state",
-            "resource": f"{base_url}/mcp/oauth-v21",
-            "code_challenge": code_challenge(verifier),
-            "code_challenge_method": "S256",
-            "auto_approve": "true",
-        },
-        follow_redirects=False,
+    client.post(
+        "/oauth/device/verify/consent",
+        data={"user_code": authorize.json()["user_code"], "decision": "approve"},
     )
-    _assert_status(authorize, 302)
-    authorization_code = redirect_query(authorize.headers["location"])["code"][0]
-
     token = client.post(
-        _path_from_url(auth_server.json()["token_endpoint"], base_url),
+        "/oauth/token",
         data={
-            "grant_type": "authorization_code",
-            "code": authorization_code,
-            "redirect_uri": "https://client.example/live/oauth-v21/callback",
-            "client_id": registration.json()["client_id"],
-            "code_verifier": verifier,
-            "resource": f"{base_url}/mcp/oauth-v21",
+            "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+            "client_id": "phase-11-device-client",
+            "device_code": authorize.json()["device_code"],
         },
     )
     _assert_status(token, 200)
 
     initialize = client.post(
-        "/mcp/oauth-v21",
+        "/mcp/oauth",
         headers={"Authorization": f"Bearer {token.json()['access_token']}"},
-        json=jsonrpc_payload(request_id="live-oauth-v21-init", method="initialize"),
+        json=jsonrpc_payload(request_id="live-device-init", method="initialize"),
     )
     _assert_status(initialize, 200)
-    return SchemeResult("oauth-v21", "discover/register/authorize/token/access succeeded")
+    return SchemeResult("oauth-device-flow", "device authorize/token/access succeeded")
 
 
 def run_dynamic_registration(client: httpx.Client) -> SchemeResult:
@@ -261,18 +195,14 @@ def run_dynamic_registration(client: httpx.Client) -> SchemeResult:
 
 
 def run_scheme(scheme: str, client: httpx.Client, *, base_url: str) -> SchemeResult:
-    if scheme == "no-auth":
-        return run_no_auth(client)
     if scheme == "bearer-token":
         return run_bearer_token(client)
-    if scheme == "oauth-v1":
-        return run_oauth_v1(client, base_url=base_url)
-    if scheme == "oauth-v2-3l":
-        return run_oauth_v2_3l(client, base_url=base_url)
-    if scheme == "oauth-v2-2l":
-        return run_oauth_v2_2l(client)
-    if scheme == "oauth-v21":
-        return run_oauth_v21(client, base_url=base_url)
+    if scheme == "oauth-auth-code":
+        return run_oauth_auth_code(client, base_url=base_url)
+    if scheme == "oauth-client-creds":
+        return run_oauth_client_creds(client)
+    if scheme == "oauth-device-flow":
+        return run_oauth_device_flow(client)
     if scheme == "dynamic-registration":
         return run_dynamic_registration(client)
     raise ValueError(f"Unsupported scheme: {scheme}")
@@ -294,10 +224,10 @@ def main() -> int:
     args = parser.parse_args()
 
     schemes = SCHEMES if args.scheme == "all" else (args.scheme,)
-    with httpx.Client(base_url=args.base_url, timeout=10.0) as client:
+    with httpx.Client(base_url=args.base_url, follow_redirects=False, timeout=10.0) as client:
         for scheme in schemes:
             result = run_scheme(scheme, client, base_url=args.base_url.rstrip("/"))
-            print(f"PASS {result.scheme}: {result.detail}")
+            print(f"[ok] {result.scheme}: {result.detail}")
     return 0
 
 

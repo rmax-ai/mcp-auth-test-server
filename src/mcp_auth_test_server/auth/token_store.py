@@ -1,4 +1,4 @@
-"""In-memory storage for mock OAuth clients, authorization codes, and access tokens."""
+"""In-memory storage for mock OAuth clients, authorization codes, and tokens."""
 
 from __future__ import annotations
 
@@ -11,6 +11,9 @@ from mcp_auth_test_server.auth.audit import AuditEvent, redact
 
 AUTHORIZATION_CODE_TTL_SECONDS = 300
 ACCESS_TOKEN_TTL_SECONDS = 3600
+REFRESH_TOKEN_TTL_SECONDS = 2592000
+DEVICE_CODE_TTL_SECONDS = 900
+DEVICE_CODE_INTERVAL_SECONDS = 5
 
 
 @dataclass(slots=True)
@@ -57,6 +60,31 @@ class AccessTokenRecord:
     token_type: str = "Bearer"
 
 
+@dataclass(slots=True)
+class RefreshTokenRecord:
+    """Refresh token metadata for minting additional access tokens."""
+
+    refresh_token: str
+    client_id: str
+    scope: str
+    grant_type: str
+    audience: str | None
+    issuer: str | None
+    expires_at: datetime
+
+
+@dataclass(slots=True)
+class DeviceCodeRecord:
+    """Device authorization code state for the device flow."""
+
+    device_code: str
+    user_code: str
+    client_id: str
+    scope: str
+    verified: bool = False
+    expires_at: datetime | None = None
+
+
 class OAuthTokenStore:
     """Simple in-memory store for OAuth state."""
 
@@ -64,8 +92,9 @@ class OAuthTokenStore:
         self._clients: dict[str, ClientRecord] = {}
         self._authorization_codes: dict[str, AuthorizationCodeRecord] = {}
         self._access_tokens: dict[str, AccessTokenRecord] = {}
-        self._approval_records: list[ApprovalRecord] = []
-        self._audit_events: list[AuditEvent] = []
+        self._refresh_tokens: dict[str, RefreshTokenRecord] = {}
+        self._device_codes: dict[str, DeviceCodeRecord] = {}
+        self._user_codes: dict[str, str] = {}
         self._seed_mock_clients()
 
     def reset(self) -> None:
@@ -74,8 +103,9 @@ class OAuthTokenStore:
         self._clients.clear()
         self._authorization_codes.clear()
         self._access_tokens.clear()
-        self._approval_records.clear()
-        self._audit_events.clear()
+        self._refresh_tokens.clear()
+        self._device_codes.clear()
+        self._user_codes.clear()
         self._seed_mock_clients()
 
     def register_client(
@@ -254,30 +284,105 @@ class OAuthTokenStore:
             return None
         return record
 
-    def record_approval(self, record: ApprovalRecord) -> None:
-        """Persist a consent decision for audit / debug."""
-        self._approval_records.append(record)
-        self._audit_events.append(
-            AuditEvent(
-                event_type="approval",
-                client_id=record.client_id,
-                scope=record.scope,
-                result=record.decision,
-                detail=f"mode={record.mode.value} admin_confirmed={record.admin_scope_confirmed}",
-            )
+    def issue_refresh_token(
+        self,
+        *,
+        client_id: str,
+        scope: str,
+        grant_type: str,
+        audience: str | None = None,
+        issuer: str | None = None,
+    ) -> RefreshTokenRecord:
+        """Create and persist a bearer refresh token."""
+
+        record = RefreshTokenRecord(
+            refresh_token=token_urlsafe(32),
+            client_id=client_id,
+            scope=scope,
+            grant_type=grant_type,
+            audience=audience,
+            issuer=issuer,
+            expires_at=self._now() + timedelta(seconds=REFRESH_TOKEN_TTL_SECONDS),
         )
+        self._refresh_tokens[record.refresh_token] = record
+        return record
 
-    def get_approval_records(self) -> list[ApprovalRecord]:
-        """Return all recorded approval decisions."""
-        return list(self._approval_records)
+    def get_refresh_token(self, token: str) -> RefreshTokenRecord | None:
+        """Return a refresh token if it exists and has not expired."""
 
-    def get_audit_events(self) -> list[AuditEvent]:
-        """Return all recorded audit events."""
-        return list(self._audit_events)
+        record = self._refresh_tokens.get(token)
+        if record is None:
+            return None
+        if record.expires_at < self._now():
+            self._refresh_tokens.pop(token, None)
+            return None
+        return record
 
-    def revoke_access_token(self, token: str) -> None:
-        """Remove an access token from the in-memory store (RFC 7009)."""
-        self._access_tokens.pop(token, None)
+    def issue_device_code(
+        self,
+        *,
+        client_id: str,
+        scope: str,
+    ) -> DeviceCodeRecord:
+        """Create and persist a device code and user code pair."""
+
+        device_code = token_urlsafe(24)
+        raw = token_urlsafe(4).upper()
+        user_code = f"{raw[:4]}-{raw[4:]}"
+        record = DeviceCodeRecord(
+            device_code=device_code,
+            user_code=user_code,
+            client_id=client_id,
+            scope=scope,
+            verified=False,
+            expires_at=self._now() + timedelta(seconds=DEVICE_CODE_TTL_SECONDS),
+        )
+        self._device_codes[device_code] = record
+        self._user_codes[user_code] = device_code
+        return record
+
+    def get_device_code(self, device_code: str) -> DeviceCodeRecord | None:
+        """Return a device code record if it exists and has not expired."""
+
+        record = self._device_codes.get(device_code)
+        if record is None:
+            return None
+        if record.expires_at is not None and record.expires_at < self._now():
+            return None
+        return record
+
+    def verify_device_code(self, user_code: str) -> DeviceCodeRecord | None:
+        """Look up user_code, mark verified, and return the record."""
+
+        device_code = self._user_codes.get(user_code)
+        if device_code is None:
+            return None
+        record = self._device_codes.get(device_code)
+        if record is None:
+            return None
+        if record.expires_at is not None and record.expires_at < self._now():
+            return None
+        record.verified = True
+        return record
+
+    def consume_device_code(
+        self,
+        device_code: str,
+        client_id: str,
+    ) -> DeviceCodeRecord | None:
+        """Pop device code, check expiry, client, and verification status."""
+
+        record = self._device_codes.pop(device_code, None)
+        if record is None:
+            return None
+        self._user_codes.pop(record.user_code, None)
+        if record.expires_at is not None and record.expires_at < self._now():
+            return None
+        if record.client_id != client_id:
+            return None
+        if not record.verified:
+            return None
+        return record
 
     @staticmethod
     def _now() -> datetime:
@@ -289,7 +394,7 @@ class OAuthTokenStore:
         self.add_client(
             client_id="phase-5-public-client",
             token_endpoint_auth_method="none",
-            grant_types=["authorization_code"],
+            grant_types=["authorization_code", "refresh_token"],
             response_types=["code"],
             redirect_uris=["https://client.example/callback"],
             scope="mcp:tools:list mcp:tools:echo mcp:tools:read",
@@ -308,41 +413,23 @@ class OAuthTokenStore:
         self.add_client(
             client_id="phase-7-public-client",
             token_endpoint_auth_method="none",
-            grant_types=["authorization_code"],
+            grant_types=["authorization_code", "refresh_token"],
             response_types=["code"],
             redirect_uris=["https://client.example/oauth-v21/callback"],
             scope="mcp:tools:list mcp:tools:echo mcp:tools:read",
             client_name="Phase 7 Public Client",
         )
-        # ── Spec-aligned fixture clients for CIMD-style resolution ──────
         self.add_client(
-            client_id="dev-public-client",
+            client_id="phase-11-device-client",
             token_endpoint_auth_method="none",
-            grant_types=["authorization_code"],
-            response_types=["code"],
-            redirect_uris=["http://localhost:3000/callback", "https://dev.example/callback"],
-            scope="mcp:tools:list mcp:tools:echo mcp:tools:read mcp:tools:write",
-            client_name="Dev Public Client (CIMD fixture)",
-        )
-        self.add_client(
-            client_id="dev-confidential-client",
-            client_secret="dev-confidential-secret",
-            token_endpoint_auth_method="client_secret_post",
-            grant_types=["authorization_code", "client_credentials"],
-            response_types=["code"],
-            redirect_uris=["http://localhost:3000/callback"],
-            scope="mcp:tools:list mcp:tools:echo mcp:tools:read mcp:tools:write",
-            client_name="Dev Confidential Client (CIMD fixture)",
-        )
-        self.add_client(
-            client_id="dev-admin-client",
-            client_secret="dev-admin-secret",
-            token_endpoint_auth_method="client_secret_post",
-            grant_types=["client_credentials"],
+            grant_types=[
+                "urn:ietf:params:oauth:grant-type:device_code",
+                "refresh_token",
+            ],
             response_types=[],
             redirect_uris=[],
-            scope="mcp:tools:list mcp:tools:echo mcp:tools:read mcp:tools:write mcp:tools:admin",
-            client_name="Dev Admin Client (CIMD fixture)",
+            scope="mcp:read",
+            client_name="Phase 11 Device Client",
         )
 
 

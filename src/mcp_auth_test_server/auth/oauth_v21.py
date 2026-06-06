@@ -131,3 +131,20 @@ def validate_oauth_v21_token_resource(
             status_code=400,
         )
     return resource
+
+
+def validate_oauth_v21_refresh_resource(
+    *,
+    resource: str | None,
+    expected_resource: str,
+    authorized_resource: str,
+) -> str:
+    """Validate an optional refresh-token resource parameter for OAuth 2.1."""
+
+    if resource is None:
+        return authorized_resource
+    return validate_oauth_v21_token_resource(
+        resource=resource,
+        expected_resource=expected_resource,
+        authorized_resource=authorized_resource,
+    )

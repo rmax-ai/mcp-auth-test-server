@@ -95,6 +95,8 @@ class OAuthTokenStore:
         self._refresh_tokens: dict[str, RefreshTokenRecord] = {}
         self._device_codes: dict[str, DeviceCodeRecord] = {}
         self._user_codes: dict[str, str] = {}
+        self._approval_records: list[ApprovalRecord] = []
+        self._audit_events: list[AuditEvent] = []
         self._seed_mock_clients()
 
     def reset(self) -> None:
@@ -106,6 +108,8 @@ class OAuthTokenStore:
         self._refresh_tokens.clear()
         self._device_codes.clear()
         self._user_codes.clear()
+        self._approval_records.clear()
+        self._audit_events.clear()
         self._seed_mock_clients()
 
     def register_client(
@@ -384,6 +388,31 @@ class OAuthTokenStore:
             return None
         return record
 
+    def record_approval(self, record: ApprovalRecord) -> None:
+        """Persist a consent decision for audit / debug."""
+        self._approval_records.append(record)
+        self._audit_events.append(
+            AuditEvent(
+                event_type="approval",
+                client_id=record.client_id,
+                scope=record.scope,
+                result=record.decision,
+                detail=f"mode={record.mode.value} admin_confirmed={record.admin_scope_confirmed}",
+            )
+        )
+
+    def get_approval_records(self) -> list[ApprovalRecord]:
+        """Return all recorded approval decisions."""
+        return list(self._approval_records)
+
+    def get_audit_events(self) -> list[AuditEvent]:
+        """Return all recorded audit events."""
+        return list(self._audit_events)
+
+    def revoke_access_token(self, token: str) -> None:
+        """Remove an access token from the in-memory store (RFC 7009)."""
+        self._access_tokens.pop(token, None)
+
     @staticmethod
     def _now() -> datetime:
         return datetime.now(tz=UTC)
@@ -430,6 +459,35 @@ class OAuthTokenStore:
             redirect_uris=[],
             scope="mcp:read",
             client_name="Phase 11 Device Client",
+        )
+        self.add_client(
+            client_id="dev-public-client",
+            token_endpoint_auth_method="none",
+            grant_types=["authorization_code"],
+            response_types=["code"],
+            redirect_uris=["http://localhost:3000/callback", "https://dev.example/callback"],
+            scope="mcp:tools:list mcp:tools:echo mcp:tools:read mcp:tools:write",
+            client_name="Dev Public Client (CIMD fixture)",
+        )
+        self.add_client(
+            client_id="dev-confidential-client",
+            client_secret="dev-confidential-secret",
+            token_endpoint_auth_method="client_secret_post",
+            grant_types=["authorization_code", "client_credentials"],
+            response_types=["code"],
+            redirect_uris=["http://localhost:3000/callback"],
+            scope="mcp:tools:list mcp:tools:echo mcp:tools:read mcp:tools:write",
+            client_name="Dev Confidential Client (CIMD fixture)",
+        )
+        self.add_client(
+            client_id="dev-admin-client",
+            client_secret="dev-admin-secret",
+            token_endpoint_auth_method="client_secret_post",
+            grant_types=["client_credentials"],
+            response_types=[],
+            redirect_uris=[],
+            scope="mcp:tools:list mcp:tools:echo mcp:tools:read mcp:tools:write mcp:tools:admin",
+            client_name="Dev Admin Client (CIMD fixture)",
         )
 
 

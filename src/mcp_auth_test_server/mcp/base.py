@@ -10,6 +10,12 @@ from typing import Any
 from fastapi import Request
 from fastapi.responses import JSONResponse, Response
 
+from mcp_auth_test_server.mcp.policy import (
+    check_argument_policy,
+    check_tool_scope,
+    filter_tools_by_scope,
+)
+
 JsonObject = dict[str, Any]
 ToolHandler = Callable[[JsonObject], Awaitable[JsonObject]]
 

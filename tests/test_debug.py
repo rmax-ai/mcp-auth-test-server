@@ -2,20 +2,30 @@
 
 from __future__ import annotations
 
+from urllib.parse import parse_qs, urlparse
+
 import pytest
 
 from tests.flow_helpers import code_challenge
 
+MOCK_OAUTH_RESOURCE = "http://test/mcp/oauth"
 
-@ pytest.mark.asyncio
+
+@pytest.mark.asyncio
 async def test_debug_endpoints_available(client):
     """All debug endpoints return 200 when called."""
-    for path in ("/debug/audit", "/debug/approvals", "/debug/tokens", "/debug/authorizations", "/debug/clients"):
+    for path in (
+        "/debug/audit",
+        "/debug/approvals",
+        "/debug/tokens",
+        "/debug/authorizations",
+        "/debug/clients",
+    ):
         response = await client.get(path)
         assert response.status_code == 200, f"{path} returned {response.status_code}"
 
 
-@ pytest.mark.asyncio
+@pytest.mark.asyncio
 async def test_debug_audit_records_token_issuance(client):
     """Running a full auth-code flow produces audit events for approval + code + token."""
     register = await client.post(
@@ -37,6 +47,7 @@ async def test_debug_audit_records_token_issuance(client):
             "redirect_uri": "https://client.example/audit/callback",
             "scope": "mcp:tools:list mcp:tools:echo mcp:tools:read",
             "state": "audit-state",
+            "resource": MOCK_OAUTH_RESOURCE,
             "code_challenge": code_challenge(verifier),
             "code_challenge_method": "S256",
             "auto_approve": "true",
@@ -53,7 +64,7 @@ async def test_debug_audit_records_token_issuance(client):
     assert "approval" in event_types
 
 
-@ pytest.mark.asyncio
+@pytest.mark.asyncio
 async def test_debug_tokens_no_raw_token_leakage(client):
     """Debug token endpoint returns hashes, not raw tokens."""
     register = await client.post(
@@ -75,6 +86,7 @@ async def test_debug_tokens_no_raw_token_leakage(client):
             "redirect_uri": "https://client.example/leak/callback",
             "scope": "mcp:tools:list",
             "state": "leak-state",
+            "resource": MOCK_OAUTH_RESOURCE,
             "code_challenge": code_challenge(verifier),
             "code_challenge_method": "S256",
             "auto_approve": "true",
@@ -82,7 +94,6 @@ async def test_debug_tokens_no_raw_token_leakage(client):
         follow_redirects=False,
     )
 
-    from urllib.parse import parse_qs, urlparse
     location = authorize.headers["location"]
     auth_code = parse_qs(urlparse(location).query)["code"][0]
 
@@ -94,6 +105,7 @@ async def test_debug_tokens_no_raw_token_leakage(client):
             "redirect_uri": "https://client.example/leak/callback",
             "client_id": registration["client_id"],
             "code_verifier": verifier,
+            "resource": MOCK_OAUTH_RESOURCE,
         },
     )
     raw_token = token.json()["access_token"]
@@ -106,7 +118,7 @@ async def test_debug_tokens_no_raw_token_leakage(client):
         assert token_hash not in raw_token  # hash should not match raw token
 
 
-@ pytest.mark.asyncio
+@pytest.mark.asyncio
 async def test_debug_approvals_records_allow_and_deny(client):
     """Both allow and deny paths produce approval records."""
     register = await client.post(
@@ -130,6 +142,7 @@ async def test_debug_approvals_records_allow_and_deny(client):
             "redirect_uri": "https://client.example/approval/callback",
             "scope": "mcp:tools:list",
             "state": "deny-state",
+            "resource": MOCK_OAUTH_RESOURCE,
             "code_challenge": ch,
             "code_challenge_method": "S256",
             "approval_mode": "auto_deny",
@@ -152,6 +165,7 @@ async def test_debug_approvals_records_allow_and_deny(client):
             "redirect_uri": "https://client.example/approval/callback",
             "scope": "mcp:tools:list",
             "state": "approve-state",
+            "resource": MOCK_OAUTH_RESOURCE,
             "code_challenge": ch,
             "code_challenge_method": "S256",
             "auto_approve": "true",
@@ -167,7 +181,7 @@ async def test_debug_approvals_records_allow_and_deny(client):
     assert "denied" in decisions
 
 
-@ pytest.mark.asyncio
+@pytest.mark.asyncio
 async def test_debug_clients_redacts_secrets(client):
     """Client debug endpoint does not expose raw secrets."""
     await client.post(
@@ -184,4 +198,4 @@ async def test_debug_clients_redacts_secrets(client):
     clients = debug.json()["clients"]
     for entry in clients:
         assert "client_secret" not in entry
-        assert entry.get("has_client_secret") is True or entry.get("has_client_secret") is False  # bool, not string
+        assert entry.get("has_client_secret") is True or entry.get("has_client_secret") is False

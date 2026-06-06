@@ -139,7 +139,7 @@ async def test_full_auth_code_pkce_flow_allows_mcp_access(client):
     assert authorize_query["iss"] == ["http://test"]
     assert token_response.status_code == 200
     assert token_body["token_type"] == "Bearer"
-    assert token_body["scope"] == "mcp:read"
+    assert token_body["scope"] == "mcp:tools:list mcp:tools:echo mcp:tools:read"
     assert token_body["aud"] == "http://test/mcp/oauth"
     assert token_body["iss"] == "http://test"
     assert "refresh_token" in token_body
@@ -189,7 +189,7 @@ async def test_refresh_token_exchange_allows_mcp_access(client):
     )
 
     assert refreshed.status_code == 200
-    assert refreshed_body["scope"] == "mcp:read"
+    assert refreshed_body["scope"] == "mcp:tools:list mcp:tools:echo mcp:tools:read"
     assert refreshed_body["refresh_token"] == refresh_token
     assert refreshed_body["aud"] == "http://test/mcp/oauth"
     assert mcp_response.status_code == 200

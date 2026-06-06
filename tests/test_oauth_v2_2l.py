@@ -20,7 +20,7 @@ async def test_client_credentials_token_exchange_returns_access_token(client):
         "access_token": response.json()["access_token"],
         "token_type": "Bearer",
         "expires_in": 3600,
-        "scope": "mcp:write",
+        "scope": "mcp:tools:write",
         "aud": "http://test/mcp/oauth",
         "iss": "http://test",
     }

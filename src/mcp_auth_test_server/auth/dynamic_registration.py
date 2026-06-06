@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from mcp_auth_test_server.auth.oauth import (
     AUTHORIZATION_CODE_GRANT_TYPE,
     CLIENT_CREDENTIALS_GRANT_TYPE,
+    DEFAULT_OAUTH_SCOPE,
     DEVICE_CODE_GRANT_TYPE,
     REFRESH_TOKEN_GRANT_TYPE,
     OAuthError,

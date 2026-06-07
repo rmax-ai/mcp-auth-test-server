@@ -1,9 +1,37 @@
 <script>
   import { base } from "$app/paths";
+  import { onMount } from "svelte";
 
   export let title = "MCP Auth Test Server";
   export let description =
     "A test server and CLI for exercising bearer, OAuth auth-code, device, and client-credentials flows for MCP resources.";
+
+  onMount(async () => {
+    try {
+      const { default: mermaid } = await import(
+        "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs"
+      );
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: "base",
+        themeVariables: {
+          background: "transparent",
+          primaryColor: "#1e293b",
+          primaryBorderColor: "#93c5fd",
+          primaryTextColor: "#e5e7eb",
+          lineColor: "#64748b",
+          secondaryColor: "#0f172a",
+          tertiaryColor: "#172554",
+        },
+      });
+      const els = document.querySelectorAll(".language-mermaid");
+      if (els.length > 0) {
+        await mermaid.run({ querySelector: ".language-mermaid" });
+      }
+    } catch (e) {
+      console.warn("Mermaid render failed:", e);
+    }
+  });
 
   const navItems = [
     { href: `${base}/`, label: "Overview" },

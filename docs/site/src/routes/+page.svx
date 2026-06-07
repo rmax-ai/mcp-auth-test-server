@@ -19,29 +19,88 @@ description: Static docs for the MCP Auth Test Server and the standalone mcp-aut
     <h3>One OAuth resource</h3>
     <p>
       <code>/mcp/oauth</code> accepts OAuth-issued bearer tokens from auth-code,
-      device, and client-credentials grants.
+      device, and client-credentials grants, while keeping resource, audience,
+      issuer, and PKCE behavior visible.
     </p>
   </article>
   <article class="panel-card">
     <h3>One static bearer surface</h3>
     <p>
       <code>/mcp/bearer-token</code> is deliberately simpler and does not
-      participate in discovery or token issuance.
+      participate in discovery or token issuance, which makes bearer-only
+      client behavior easy to isolate.
     </p>
   </article>
   <article class="panel-card">
     <h3>One generic client</h3>
     <p>
       The CLI is resource-centric, not server-specific. It discovers metadata,
-      selects an auth mode, saves profiles, and keeps tokens valid.
+      selects an auth mode, saves profiles, and keeps tokens valid across
+      dynamic registration and seeded CIMD fixture clients.
     </p>
   </article>
 </div>
 
+The mounted app also exposes read-only <code>/debug/*</code> endpoints, a
+tool-policy model with scope declarations and argument validation, and seeded
+<code>dev-*</code> fixture clients that let you exercise common flows without a
+registration step.
+
+## Architecture at a glance
+
+```mermaid
+flowchart TD
+    classDef primary fill:#0f172a,stroke:#93c5fd,color:#e5e7eb,stroke-width:1.5px;
+    classDef secondary fill:#111827,stroke:#7dd3fc,color:#e5e7eb,stroke-width:1.5px;
+    classDef decision fill:#1e293b,stroke:#fcd34d,color:#e5e7eb,stroke-width:1.5px;
+    classDef tertiary fill:#172554,stroke:#a5b4fc,color:#e5e7eb,stroke-width:1.5px;
+    classDef success fill:#1f2937,stroke:#86efac,color:#e5e7eb,stroke-width:1.5px;
+    classDef failure fill:#3f1d2e,stroke:#fda4af,color:#e5e7eb,stroke-width:1.5px;
+
+    CLI["mcp-auth CLI"]:::secondary
+    APP["app.py\nFastAPI entrypoint"]:::primary
+    DOCS["/docs, /redoc,\n/docs/oauth-callback"]:::tertiary
+
+    subgraph MR["Mounted routers"]
+        direction TB
+        BEARER["/mcp/bearer-token\n/test-auth/bearer-token/mint"]:::primary
+        OAUTH["/mcp/oauth\n/oauth/*"]:::primary
+        DCR["/oauth/register"]:::secondary
+        DISC["/.well-known/*"]:::secondary
+        DEBUG["/debug/*"]:::secondary
+    end
+
+    subgraph CORE["Auth and policy core"]
+        direction TB
+        AUTH["auth/*.py"]:::tertiary
+        POLICY["mcp/policy.py\nmcp/tools.py"]:::tertiary
+        STORE[("InMemoryTokenStore")]:::success
+    end
+
+    ALT["Source-defined alternate routers:\noauth_v2_2l.py, device_flow.py, oauth_v21.py"]:::decision
+
+    CLI --> DISC
+    CLI --> OAUTH
+    APP --> BEARER
+    APP --> OAUTH
+    APP --> DCR
+    APP --> DISC
+    APP --> DEBUG
+    APP --> DOCS
+    BEARER --> AUTH
+    OAUTH --> AUTH
+    OAUTH --> POLICY
+    DCR --> AUTH
+    AUTH --> STORE
+    POLICY --> STORE
+    DEBUG --> STORE
+    ALT --> AUTH
+```
+
 ## Quick start
 
 ```bash
-uv sync --extra dev
+uv sync --dev
 uv run uvicorn mcp_auth_test_server.app:app --reload --port 8765
 ```
 
@@ -65,11 +124,15 @@ uv run mcp-auth call http://127.0.0.1:8765/mcp/oauth initialize
 ## What the docs site covers
 
 - <a href="flows/">Flow walkthroughs</a> with exact CLI commands for each auth mode
-- <a href="reference/">Reference</a> for endpoints, discovery documents, and behavior constraints
+- <a href="reference/">Reference</a> for endpoints, discovery documents, policy behavior, CIMD fixture clients, and debug routes
 - Enough context to verify whether a client implementation is doing the right thing
+
+If you need the endpoint inventory or want the policy/debug details in one
+place, start with the <a href="reference/">reference page</a>.
 
 ## Why this exists
 
 Most auth test fixtures blur different schemes together. This one does the
 opposite: each auth surface stays explicit, and the shared OAuth resource keeps
-resource, issuer, PKCE, and refresh behavior visible enough to test against.
+resource, issuer, PKCE, policy, and refresh behavior visible enough to test
+against.

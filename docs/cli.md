@@ -7,7 +7,7 @@ reusable local profiles, and keeps tokens current for later MCP calls.
 ## Install
 
 ```bash
-uv sync --extra dev
+uv sync --dev
 uv run mcp-auth --help
 ```
 
@@ -20,6 +20,10 @@ uv run mcp-auth call <resource-url> initialize
 uv run mcp-auth profile list
 uv run mcp-auth logout <resource-url>
 ```
+
+Global flag:
+
+- Use `--verbose` with `discover`, `login`, or `call` to print protocol-level details.
 
 ## Supported auth modes
 
@@ -83,6 +87,9 @@ uv run mcp-auth login \
   --register \
   --scope mcp:write
 ```
+
+Use `--scope` on client-credentials logins when you want to request a narrower
+or more specific token scope than the server default.
 
 ## Profiles and token maintenance
 

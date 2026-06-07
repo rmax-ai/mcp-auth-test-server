@@ -10,11 +10,27 @@ description: Exact mcp-auth command sequences for bearer, auth-code, device, and
 Start the server in one terminal:
 
 ```bash
-uv sync --extra dev
+uv sync --dev
 uv run uvicorn mcp_auth_test_server.app:app --reload --port 8765
 ```
 
 Run the following sequences from another terminal.
+
+<div class="command-callout">
+  <strong>CIMD fixture clients</strong>
+  <p>
+    You can use the seeded <code>dev-*</code> clients instead of
+    <code>--register</code> when you want predictable credentials:
+    <code>dev-public-client</code> for the shared auth-code flow,
+    <code>dev-confidential-client</code> for client credentials,
+    and <code>dev-admin-client</code> for admin-scoped client credentials.
+  </p>
+  <p>
+    Add <code>--verbose</code> to <code>discover</code>, <code>login</code>,
+    or <code>call</code> when you want protocol-level discovery and token
+    exchange details.
+  </p>
+</div>
 
 ## Static bearer
 
@@ -46,6 +62,9 @@ uv run mcp-auth login \
 The CLI starts a localhost callback listener, prints the authorization URL, and
 waits for the browser redirect in the background. Open the URL and approve
 consent.
+
+If you want to skip registration, use a seeded public client such as
+<code>--client-id dev-public-client</code> instead of <code>--register</code>.
 
 ```bash
 uv run mcp-auth call http://127.0.0.1:8765/mcp/oauth initialize
@@ -94,6 +113,11 @@ uv run mcp-auth call \
   tools/call \
   --tool-name ping
 ```
+
+Use `--scope` on client-credentials logins when you want to request a
+particular scope set, and use a seeded confidential client with
+<code>--client-id</code> and <code>--client-secret</code> if you want to avoid
+dynamic registration.
 
 ## Useful profile commands
 

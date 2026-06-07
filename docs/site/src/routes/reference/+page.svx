@@ -9,10 +9,13 @@ description: Reference summary for protected resources, discovery endpoints, and
 
 ## Protected resources
 
-| Endpoint | Purpose |
-| --- | --- |
-| `/mcp/oauth` | Canonical OAuth-protected MCP JSON-RPC endpoint |
-| `/mcp/bearer-token` | Static bearer-token MCP JSON-RPC endpoint |
+| Endpoint | Status | Purpose |
+| --- | --- | --- |
+| `/mcp/oauth` | Mounted by default | Canonical OAuth-protected MCP JSON-RPC endpoint |
+| `/mcp/bearer-token` | Mounted by default | Static bearer-token MCP JSON-RPC endpoint |
+| `/mcp/oauth-v2-client-creds` | Source-defined, not mounted by `app.py` | Dedicated client-credentials MCP resource from `mcp/oauth_v2_2l.py` |
+| `/mcp/device-flow` | Source-defined, not mounted by `app.py` | Dedicated device-grant MCP resource from `mcp/device_flow.py` |
+| `/mcp/oauth-v21` | Source-defined, not mounted by `app.py` | Dedicated OAuth 2.1 MCP resource from `mcp/oauth_v21.py` |
 
 ## OAuth authorization server endpoints
 
@@ -21,11 +24,17 @@ description: Reference summary for protected resources, discovery endpoints, and
 | `/.well-known/oauth-protected-resource` | Protected resource metadata |
 | `/.well-known/oauth-authorization-server` | Authorization server metadata |
 | `/oauth/authorize` | Authorization endpoint for auth-code + PKCE |
+| `/oauth/authorize/consent` | Consent form handler for the shared auth-code flow |
 | `/oauth/token` | Token endpoint for auth-code, refresh, client-credentials, and device grants |
 | `/oauth/device/authorize` | Device authorization endpoint |
 | `/oauth/device/verify` | Mock verification UI |
 | `/oauth/device/verify/consent` | Verification form handler |
 | `/oauth/register` | Dynamic client registration |
+| `/debug/authorizations` | Redacted issued authorization-code state |
+| `/debug/approvals` | Recorded approval decisions and consent modes |
+| `/debug/tokens` | Redacted issued access-token state |
+| `/debug/clients` | Seeded and dynamically registered client metadata |
+| `/debug/audit` | Structured audit trail across OAuth and MCP activity |
 
 ## Shared OAuth behavior
 
@@ -34,6 +43,61 @@ description: Reference summary for protected resources, discovery endpoints, and
 - `resource` required for auth-code exchanges
 - issuer propagated on authorization redirects
 - issuer and audience preserved on issued and refreshed tokens
+- `/mcp/oauth` validates both token audience and issuer before serving MCP requests
+
+## Policy and scope
+
+The shared tool catalog is declared in `mcp/tools.py`. Scope metadata exists in
+the tool definitions even though the default mounted handlers do not currently
+pass token scopes into `BaseMCPHandler`, so argument policies are active today
+while per-tool scope denials are not fully wired on the mounted routes.
+
+### Declared tool scopes
+
+| Tool or method | Declared scope |
+| --- | --- |
+| `tools/list` | `mcp:tools:list` |
+| `echo` | `mcp:tools:echo` |
+| `ping` | `mcp:tools:echo` |
+| `whoami` | `mcp:tools:read` |
+| `read_note` | `mcp:tools:read` |
+| `write_note` | `mcp:tools:write` |
+| `dangerous_delete` | `mcp:tools:admin` |
+
+### Argument and environment policies
+
+| Tool | Policy |
+| --- | --- |
+| `write_note` | Requires `content`, caps it at 1000 characters, and blocks patterns such as `rm -rf`, `DROP TABLE`, and `<script>` |
+| `dangerous_delete` | Requires `confirm=true` and the `MCP_ALLOW_DANGEROUS` environment variable |
+
+`dangerous_delete` is the current environment-gated tool in the catalog.
+
+## CIMD fixture clients
+
+The in-memory token store seeds three well-known `dev-*` clients so you can run
+repeatable flows without dynamic registration.
+
+| Client ID | Profile | Auth method | Grants | Notes |
+| --- | --- | --- | --- | --- |
+| `dev-public-client` | public | `none` | `authorization_code` | Localhost and dev redirect URIs for auth-code testing |
+| `dev-confidential-client` | confidential | `client_secret_post` | `authorization_code`, `client_credentials` | Shared dev secret: `dev-confidential-secret` |
+| `dev-admin-client` | admin | `client_secret_post` | `client_credentials` | Includes admin scope and uses `dev-admin-secret` |
+
+These coexist with RFC 7591 dynamic registration at `/oauth/register`; the repo
+supports both the CIMD-style fixed-client model and the DCR test-harness model.
+On the mounted shared `/oauth/authorize` path, auth-code requests still expect
+a public client, so `dev-public-client` is the matching seeded fixture there.
+
+## Debug endpoints
+
+| Endpoint | What it exposes |
+| --- | --- |
+| `/debug/authorizations` | Issued authorization codes as redacted hashes with client, scope, resource, and expiry metadata |
+| `/debug/approvals` | Approval decisions with mode, timestamp, and admin confirmation state |
+| `/debug/tokens` | Issued access tokens as redacted hashes with grant, audience, issuer, scope, and expiry metadata |
+| `/debug/clients` | Registered client metadata with secrets reduced to summary fields |
+| `/debug/audit` | Structured audit events for registration, approval, authorization-code issuance, token issuance, and MCP requests |
 
 ## Standalone CLI behavior
 
@@ -56,6 +120,7 @@ description: Reference summary for protected resources, discovery endpoints, and
 - Implicit grant
 - Resource Owner Password Credentials
 - Token exchange
+- No built-in token introspection or revocation
 - PAR, JAR, JARM
 - DPoP
 - mTLS sender-constrained tokens

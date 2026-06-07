@@ -1,36 +1,56 @@
 <script>
   import { base } from "$app/paths";
   import { onMount } from "svelte";
+  import { dev } from "$app/environment";
 
   export let title = "MCP Auth Test Server";
   export let description =
     "A test server and CLI for exercising bearer, OAuth auth-code, device, and client-credentials flows for MCP resources.";
 
-  onMount(async () => {
-    try {
-      const { default: mermaid } = await import(
-        "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs"
-      );
-      mermaid.initialize({
-        startOnLoad: false,
-        theme: "base",
-        themeVariables: {
-          background: "transparent",
-          primaryColor: "#1e293b",
-          primaryBorderColor: "#93c5fd",
-          primaryTextColor: "#e5e7eb",
-          lineColor: "#64748b",
-          secondaryColor: "#0f172a",
-          tertiaryColor: "#172554",
-        },
-      });
-      const els = document.querySelectorAll(".language-mermaid");
-      if (els.length > 0) {
-        await mermaid.run({ querySelector: ".language-mermaid" });
-      }
-    } catch (e) {
-      console.warn("Mermaid render failed:", e);
-    }
+  onMount(() => {
+    // Load Mermaid from CDN and render <code class="language-mermaid"> blocks
+    const loadMermaid = () => {
+      if (document.querySelector('script[data-mermaid]')) return;
+      const s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js";
+      s.dataset.mermaid = "1";
+      s.onload = () => {
+        window.mermaid.initialize({
+          startOnLoad: false,
+          theme: "base",
+          themeVariables: {
+            background: "transparent",
+            primaryColor: "#1e293b",
+            primaryBorderColor: "#93c5fd",
+            primaryTextColor: "#e5e7eb",
+            lineColor: "#64748b",
+            secondaryColor: "#0f172a",
+            tertiaryColor: "#172554",
+          },
+        });
+        // Render each <code class="language-mermaid"> individually
+        const blocks = document.querySelectorAll("code.language-mermaid");
+        if (blocks.length === 0) return;
+        let idx = 0;
+        blocks.forEach(async (el) => {
+          const source = el.textContent.trim();
+          if (!source) return;
+          const id = "mermaid-" + (idx++);
+          try {
+            const { svg } = await window.mermaid.render(id, source);
+            const wrapper = document.createElement("div");
+            wrapper.className = "mermaid-render";
+            wrapper.innerHTML = svg;
+            el.parentElement.replaceWith(wrapper);
+          } catch (e) {
+            console.error("Mermaid render error:", e?.message || e);
+          }
+        });
+      };
+      s.onerror = () => console.error("Mermaid CDN failed to load");
+      document.head.appendChild(s);
+    };
+    loadMermaid();
   });
 
   const navItems = [

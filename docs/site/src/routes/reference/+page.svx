@@ -33,8 +33,9 @@ description: Reference summary for protected resources, discovery endpoints, and
 | `/debug/authorizations` | Redacted issued authorization-code state |
 | `/debug/approvals` | Recorded approval decisions and consent modes |
 | `/debug/tokens` | Redacted issued access-token state |
-| `/debug/clients` | Seeded and dynamically registered client metadata |
-| `/debug/audit` | Structured audit trail across OAuth and MCP activity |
+|| `/debug/clients` | Seeded and dynamically registered client metadata |
+|| `/debug/audit` | Structured audit trail across OAuth and MCP activity |
+|| `/debug/traces` | Structured trace events for DCR and CIMD operations |
 
 ## Shared OAuth behavior
 
@@ -64,6 +65,10 @@ while per-tool scope denials are not fully wired on the mounted routes.
 | `write_note` | `mcp:tools:write` |
 | `dangerous_delete` | `mcp:tools:admin` |
 
+The authorization server also accepts `mcp:read` and `mcp:write` as scope values
+(for broader compatibility with CLI examples), though the tool-specific
+declared scopes use the `mcp:tools:*` namespace.
+
 ### Argument and environment policies
 
 | Tool | Policy |
@@ -88,6 +93,13 @@ These coexist with RFC 7591 dynamic registration at `/oauth/register`; the repo
 supports both the CIMD-style fixed-client model and the DCR test-harness model.
 On the mounted shared `/oauth/authorize` path, auth-code requests still expect
 a public client, so `dev-public-client` is the matching seeded fixture there.
+
+## CIMD URL-based resolver
+
+The server also supports URL-valued `client_id` values. When a client starts an
+authorization request with a `client_id` that looks like an HTTPS URL, the
+server fetches a Client ID Metadata Document from that URL, validates it, and
+registers it as a resolved client. See [DCR and CIMD](/oauth-dcr-cimd/).
 
 ## Debug endpoints
 

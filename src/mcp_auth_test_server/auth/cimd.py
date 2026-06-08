@@ -17,8 +17,6 @@ flows without a registration step.
 
 from __future__ import annotations
 
-from mcp_auth_test_server.auth.token_store import oauth_token_store
-
 # Well-known fixture client IDs for CIMD-style resolution
 CIMD_FIXTURE_CLIENTS = {
     "dev-public-client",

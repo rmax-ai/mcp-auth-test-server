@@ -97,6 +97,6 @@ uv run python examples/cimd_client_flow.py --base-url http://127.0.0.1:8765
 
 ## Source links
 
-- [`examples/dcr_client_flow.py`](../../../../examples/dcr_client_flow.py)
-- [`examples/cimd_client_flow.py`](../../../../examples/cimd_client_flow.py)
-- [`docs/dcr-vs-cimd.md`](../../../../docs/dcr-vs-cimd.md)
+- [examples/dcr_client_flow.py](https://github.com/rmax-ai/mcp-auth-test-server/blob/main/examples/dcr_client_flow.py)
+- [examples/cimd_client_flow.py](https://github.com/rmax-ai/mcp-auth-test-server/blob/main/examples/cimd_client_flow.py)
+- [docs/dcr-vs-cimd.md](https://github.com/rmax-ai/mcp-auth-test-server/blob/main/docs/dcr-vs-cimd.md)

@@ -8,6 +8,7 @@ from secrets import token_urlsafe
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from mcp_auth_test_server.auth.cimd_integration import ensure_cimd_client_registered
 from mcp_auth_test_server.auth.oauth import (
     AUTHORIZATION_CODE_GRANT_TYPE,
     CLIENT_CREDENTIALS_GRANT_TYPE,
@@ -18,6 +19,7 @@ from mcp_auth_test_server.auth.oauth import (
     validate_scope,
 )
 from mcp_auth_test_server.auth.token_store import ClientRecord, oauth_token_store
+from mcp_auth_test_server.auth.trace_logger import OAuthTraceEvent, trace_logger
 from mcp_auth_test_server.discovery import MOCK_REGISTRATION_ENDPOINT_PATH
 from mcp_auth_test_server.openapi_examples import (
     DYNAMIC_CLIENT_REGISTRATION_REQUEST_BODY,
@@ -67,8 +69,26 @@ def _string_field(payload: dict[str, object], field: str) -> str | None:
 def register_dynamic_client(payload: dict[str, object]) -> ClientRecord:
     """Validate mock registration metadata and persist a client record."""
 
+    trace_logger.record(
+        OAuthTraceEvent(
+            event_type="dcr_register_start",
+            client_id=None,
+            detail="processing dynamic client registration payload",
+            result="success",
+            metadata={"payload_keys": sorted(payload.keys())},
+        )
+    )
+
     token_endpoint_auth_method = _string_field(payload, "token_endpoint_auth_method") or "none"
     if token_endpoint_auth_method not in SUPPORTED_TOKEN_ENDPOINT_AUTH_METHODS:
+        trace_logger.record(
+            OAuthTraceEvent(
+                event_type="dcr_validation_error",
+                client_id=None,
+                detail="token_endpoint_auth_method is not supported",
+                result="failure",
+            )
+        )
         raise OAuthError(
             error="invalid_client_metadata",
             description="token_endpoint_auth_method is not supported",
@@ -80,6 +100,14 @@ def register_dynamic_client(payload: dict[str, object]) -> ClientRecord:
         grant_types = [AUTHORIZATION_CODE_GRANT_TYPE]
     unsupported_grants = sorted(set(grant_types).difference(SUPPORTED_GRANT_TYPES))
     if unsupported_grants:
+        trace_logger.record(
+            OAuthTraceEvent(
+                event_type="dcr_validation_error",
+                client_id=None,
+                detail=f"unsupported grant_types: {', '.join(unsupported_grants)}",
+                result="failure",
+            )
+        )
         raise OAuthError(
             error="invalid_client_metadata",
             description=f"unsupported grant_types: {', '.join(unsupported_grants)}",
@@ -90,6 +118,14 @@ def register_dynamic_client(payload: dict[str, object]) -> ClientRecord:
         and AUTHORIZATION_CODE_GRANT_TYPE not in grant_types
         and DEVICE_CODE_GRANT_TYPE not in grant_types
     ):
+        trace_logger.record(
+            OAuthTraceEvent(
+                event_type="dcr_validation_error",
+                client_id=None,
+                detail="refresh_token requires authorization_code or device_code",
+                result="failure",
+            )
+        )
         raise OAuthError(
             error="invalid_client_metadata",
             description="refresh_token requires authorization_code or device_code",
@@ -101,6 +137,14 @@ def register_dynamic_client(payload: dict[str, object]) -> ClientRecord:
         response_types = ["code"] if AUTHORIZATION_CODE_GRANT_TYPE in grant_types else []
     unsupported_response_types = sorted(set(response_types).difference(SUPPORTED_RESPONSE_TYPES))
     if unsupported_response_types:
+        trace_logger.record(
+            OAuthTraceEvent(
+                event_type="dcr_validation_error",
+                client_id=None,
+                detail=f"unsupported response_types: {', '.join(unsupported_response_types)}",
+                result="failure",
+            )
+        )
         raise OAuthError(
             error="invalid_client_metadata",
             description=f"unsupported response_types: {', '.join(unsupported_response_types)}",
@@ -113,6 +157,14 @@ def register_dynamic_client(payload: dict[str, object]) -> ClientRecord:
         and DEVICE_CODE_GRANT_TYPE not in grant_types
         and not redirect_uris
     ):
+        trace_logger.record(
+            OAuthTraceEvent(
+                event_type="dcr_validation_error",
+                client_id=None,
+                detail="redirect_uris is required for authorization_code clients",
+                result="failure",
+            )
+        )
         raise OAuthError(
             error="invalid_redirect_uri",
             description="redirect_uris is required for authorization_code clients",
@@ -123,18 +175,42 @@ def register_dynamic_client(payload: dict[str, object]) -> ClientRecord:
         and DEVICE_CODE_GRANT_TYPE not in grant_types
         and redirect_uris
     ):
+        trace_logger.record(
+            OAuthTraceEvent(
+                event_type="dcr_validation_error",
+                client_id=None,
+                detail="redirect_uris is only supported for authorization_code clients",
+                result="failure",
+            )
+        )
         raise OAuthError(
             error="invalid_client_metadata",
             description="redirect_uris is only supported for authorization_code clients",
             status_code=400,
         )
     if AUTHORIZATION_CODE_GRANT_TYPE in grant_types and "code" not in response_types:
+        trace_logger.record(
+            OAuthTraceEvent(
+                event_type="dcr_validation_error",
+                client_id=None,
+                detail="response_types must include code for authorization_code clients",
+                result="failure",
+            )
+        )
         raise OAuthError(
             error="invalid_client_metadata",
             description="response_types must include code for authorization_code clients",
             status_code=400,
         )
     if AUTHORIZATION_CODE_GRANT_TYPE not in grant_types and response_types:
+        trace_logger.record(
+            OAuthTraceEvent(
+                event_type="dcr_validation_error",
+                client_id=None,
+                detail="response_types must be empty when authorization_code is not enabled",
+                result="failure",
+            )
+        )
         raise OAuthError(
             error="invalid_client_metadata",
             description="response_types must be empty when authorization_code is not enabled",
@@ -144,15 +220,30 @@ def register_dynamic_client(payload: dict[str, object]) -> ClientRecord:
         CLIENT_CREDENTIALS_GRANT_TYPE in grant_types
         and token_endpoint_auth_method != "client_secret_post"
     ):
+        trace_logger.record(
+            OAuthTraceEvent(
+                event_type="dcr_validation_error",
+                client_id=None,
+                detail=(
+                    "client_credentials requires token_endpoint_auth_method client_secret_post"
+                ),
+                result="failure",
+            )
+        )
         raise OAuthError(
             error="invalid_client_metadata",
             description="client_credentials requires token_endpoint_auth_method client_secret_post",
             status_code=400,
         )
-    if (
-        DEVICE_CODE_GRANT_TYPE in grant_types
-        and token_endpoint_auth_method != "none"
-    ):
+    if DEVICE_CODE_GRANT_TYPE in grant_types and token_endpoint_auth_method != "none":
+        trace_logger.record(
+            OAuthTraceEvent(
+                event_type="dcr_validation_error",
+                client_id=None,
+                detail="device_code requires token_endpoint_auth_method none",
+                result="failure",
+            )
+        )
         raise OAuthError(
             error="invalid_client_metadata",
             description="device_code requires token_endpoint_auth_method none",
@@ -167,7 +258,7 @@ def register_dynamic_client(payload: dict[str, object]) -> ClientRecord:
     if token_endpoint_auth_method == "client_secret_post":
         client_secret = f"secret-{token_urlsafe(18)}"
 
-    return oauth_token_store.register_client(
+    record = oauth_token_store.register_client(
         token_endpoint_auth_method=token_endpoint_auth_method,
         grant_types=grant_types,
         response_types=response_types,
@@ -176,6 +267,16 @@ def register_dynamic_client(payload: dict[str, object]) -> ClientRecord:
         client_name=client_name,
         client_secret=client_secret,
     )
+    trace_logger.record(
+        OAuthTraceEvent(
+            event_type="dcr_register_success",
+            client_id=record.client_id,
+            detail="dynamic client registration completed",
+            result="success",
+            metadata={"grant_types": list(record.grant_types)},
+        )
+    )
+    return record
 
 
 def validate_registered_authorization_client(
@@ -186,8 +287,32 @@ def validate_registered_authorization_client(
 ) -> ClientRecord:
     """Ensure the client exists and may start an auth-code flow."""
 
+    success, error_message = ensure_cimd_client_registered(client_id, dev_mode=True)
+    if not success:
+        trace_logger.record(
+            OAuthTraceEvent(
+                event_type="authorize_request_validation",
+                client_id=client_id,
+                detail=error_message or "CIMD resolution failed",
+                result="failure",
+            )
+        )
+        raise OAuthError(
+            error="invalid_client",
+            description=error_message or "client is not registered",
+            status_code=400,
+        )
+
     client = oauth_token_store.get_client(client_id)
     if client is None:
+        trace_logger.record(
+            OAuthTraceEvent(
+                event_type="authorize_request_validation",
+                client_id=client_id,
+                detail="client is not registered",
+                result="failure",
+            )
+        )
         raise OAuthError(
             error="invalid_client",
             description="client is not registered",
@@ -206,6 +331,15 @@ def validate_registered_authorization_client(
             status_code=400,
         )
     if redirect_uri not in client.redirect_uris:
+        trace_logger.record(
+            OAuthTraceEvent(
+                event_type="authorize_redirect_uri_mismatch",
+                client_id=client_id,
+                detail="redirect_uri is not registered for this client",
+                result="failure",
+                metadata={"redirect_uri": redirect_uri},
+            )
+        )
         raise OAuthError(
             error="invalid_request",
             description="redirect_uri is not registered for this client",
@@ -223,6 +357,14 @@ def validate_registered_authorization_client(
             ),
             status_code=400,
         )
+    trace_logger.record(
+        OAuthTraceEvent(
+            event_type="authorize_request_validation",
+            client_id=client_id,
+            detail="authorization client validation passed",
+            result="success",
+        )
+    )
     return client
 
 
@@ -235,8 +377,34 @@ def validate_registered_token_client(
 ) -> ClientRecord:
     """Ensure the client exists and may call the token endpoint for the grant."""
 
+    success, error_message = ensure_cimd_client_registered(client_id, dev_mode=True)
+    if not success:
+        trace_logger.record(
+            OAuthTraceEvent(
+                event_type="token_exchange_error",
+                client_id=client_id,
+                detail=error_message or "CIMD resolution failed",
+                result="failure",
+                metadata={"grant_type": grant_type},
+            )
+        )
+        raise OAuthError(
+            error="invalid_client",
+            description=error_message or "client is not registered",
+            status_code=401,
+        )
+
     client = oauth_token_store.get_client(client_id)
     if client is None:
+        trace_logger.record(
+            OAuthTraceEvent(
+                event_type="token_exchange_error",
+                client_id=client_id,
+                detail="client is not registered",
+                result="failure",
+                metadata={"grant_type": grant_type},
+            )
+        )
         raise OAuthError(
             error="invalid_client",
             description="client is not registered",
@@ -268,6 +436,15 @@ def validate_registered_token_client(
                 description="client_secret must not be supplied for public clients",
                 status_code=400,
             )
+        trace_logger.record(
+            OAuthTraceEvent(
+                event_type="token_exchange_success",
+                client_id=client_id,
+                detail="token client validation passed for public client",
+                result="success",
+                metadata={"grant_type": grant_type},
+            )
+        )
         return client
 
     if client.token_endpoint_auth_method == "client_secret_post":
@@ -275,11 +452,29 @@ def validate_registered_token_client(
             client_id=client_id,
             client_secret=client_secret,
         ):
+            trace_logger.record(
+                OAuthTraceEvent(
+                    event_type="token_exchange_error",
+                    client_id=client_id,
+                    detail="client credentials are invalid",
+                    result="failure",
+                    metadata={"grant_type": grant_type},
+                )
+            )
             raise OAuthError(
                 error="invalid_client",
                 description="client credentials are invalid",
                 status_code=401,
             )
+        trace_logger.record(
+            OAuthTraceEvent(
+                event_type="token_exchange_success",
+                client_id=client_id,
+                detail="token client validation passed for confidential client",
+                result="success",
+                metadata={"grant_type": grant_type},
+            )
+        )
         return client
 
     raise OAuthError(
@@ -321,6 +516,14 @@ async def register_client(request: Request) -> JSONResponse:
     try:
         payload = await request.json()
     except ValueError:
+        trace_logger.record(
+            OAuthTraceEvent(
+                event_type="dcr_register_error",
+                client_id=None,
+                detail="request body must be valid JSON",
+                result="failure",
+            )
+        )
         error = OAuthError(
             error="invalid_client_metadata",
             description="request body must be valid JSON",
@@ -329,6 +532,14 @@ async def register_client(request: Request) -> JSONResponse:
         return JSONResponse(status_code=error.status_code, content=error.as_response())
 
     if not isinstance(payload, dict):
+        trace_logger.record(
+            OAuthTraceEvent(
+                event_type="dcr_register_error",
+                client_id=None,
+                detail="request body must be a JSON object",
+                result="failure",
+            )
+        )
         error = OAuthError(
             error="invalid_client_metadata",
             description="request body must be a JSON object",
@@ -339,6 +550,14 @@ async def register_client(request: Request) -> JSONResponse:
     try:
         client = register_dynamic_client(payload)
     except OAuthError as exc:
+        trace_logger.record(
+            OAuthTraceEvent(
+                event_type="dcr_register_error",
+                client_id=None,
+                detail=exc.description,
+                result="failure",
+            )
+        )
         return JSONResponse(status_code=exc.status_code, content=exc.as_response())
 
     logger.info(

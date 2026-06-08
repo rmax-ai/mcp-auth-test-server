@@ -6,6 +6,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
+from mcp_auth_test_server.auth.trace_logger import OAuthTraceEvent, trace_logger
 from tests.flow_helpers import code_challenge
 
 MOCK_OAUTH_RESOURCE = "http://test/mcp/oauth"
@@ -20,9 +21,37 @@ async def test_debug_endpoints_available(client):
         "/debug/tokens",
         "/debug/authorizations",
         "/debug/clients",
+        "/debug/traces",
     ):
         response = await client.get(path)
         assert response.status_code == 200, f"{path} returned {response.status_code}"
+
+
+@pytest.mark.asyncio
+async def test_debug_traces_filters_by_event_type(client):
+    """Trace debug endpoint returns structured trace events and supports filtering."""
+    trace_logger.clear()
+    trace_logger.record(
+        OAuthTraceEvent(
+            event_type="cimd_fetch_success",
+            client_id="https://client.example/metadata.json",
+            detail="resolved",
+            result="success",
+        )
+    )
+    trace_logger.record(
+        OAuthTraceEvent(
+            event_type="dcr_register_success",
+            client_id="registered-client",
+            detail="registered",
+            result="success",
+        )
+    )
+
+    response = await client.get("/debug/traces", params={"event_type": "cimd_fetch_success"})
+
+    assert response.status_code == 200
+    assert response.json()["trace_events"][0]["event_type"] == "cimd_fetch_success"
 
 
 @pytest.mark.asyncio

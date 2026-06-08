@@ -15,6 +15,8 @@ async def test_oauth_protected_resource_metadata_document(client):
         ],
         "bearer_methods_supported": ["header"],
         "scopes_supported": [
+            "mcp:read",
+            "mcp:write",
             "mcp:tools:list",
             "mcp:tools:echo",
             "mcp:tools:read",
@@ -57,6 +59,8 @@ async def test_oauth_authorization_server_metadata_document(client):
         "code_challenge_methods_supported": ["S256"],
         "resource_indicators_supported": True,
         "scopes_supported": [
+            "mcp:read",
+            "mcp:write",
             "mcp:tools:list",
             "mcp:tools:echo",
             "mcp:tools:read",

@@ -23,6 +23,7 @@ from mcp_auth_test_server.auth.dynamic_registration import (
 from mcp_auth_test_server.auth.oauth import (
     AUTHORIZATION_CODE_GRANT_TYPE,
     CLIENT_CREDENTIALS_GRANT_TYPE,
+    DEFAULT_OAUTH_SCOPE,
     DEVICE_CODE_GRANT_TYPE,
     REFRESH_TOKEN_GRANT_TYPE,
     OAuthError,
@@ -267,6 +268,7 @@ async def authorize(request: Request) -> Response:
                 auth_request.redirect_uri,
                 state=auth_request.state,
                 error="access_denied",
+                iss=issuer,
             ),
             status_code=302,
         )
@@ -385,6 +387,7 @@ async def authorize_consent(request: Request) -> Response:
                 auth_request.redirect_uri,
                 state=auth_request.state,
                 error="access_denied",
+                iss=issuer,
             ),
             status_code=302,
         )

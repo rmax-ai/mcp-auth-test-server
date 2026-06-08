@@ -13,6 +13,14 @@ MINTED_TOKEN_TTL_SECONDS = 300
 MINTED_BEARER_TOKEN_PREFIX = "static_"
 
 
+def _now() -> datetime:
+    try:
+        from mcp_auth_test_server.test_endpoints import get_current_time
+    except ImportError:
+        return datetime.now(tz=UTC)
+    return get_current_time()
+
+
 class _MintedToken:
     """Short-lived bearer token minted by the test helper endpoint."""
 
@@ -23,7 +31,7 @@ class _MintedToken:
         self.expires_at = expires_at
 
     def is_valid(self) -> bool:
-        return self.expires_at > datetime.now(tz=UTC)
+        return self.expires_at > _now()
 
 
 _minted_tokens: dict[str, _MintedToken] = {}
@@ -38,7 +46,7 @@ def mint_bearer_token() -> dict[str, object]:
     """Create a short-lived bearer token and return a token response."""
 
     token_value = f"{MINTED_BEARER_TOKEN_PREFIX}{token_urlsafe(32)}"
-    expires_at = datetime.now(tz=UTC) + timedelta(seconds=MINTED_TOKEN_TTL_SECONDS)
+    expires_at = _now() + timedelta(seconds=MINTED_TOKEN_TTL_SECONDS)
     _minted_tokens[token_value] = _MintedToken(token_value, expires_at)
     return {
         "access_token": token_value,

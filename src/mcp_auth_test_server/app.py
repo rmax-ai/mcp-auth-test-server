@@ -23,6 +23,12 @@ from mcp_auth_test_server.discovery.protected_resource import (
 from mcp_auth_test_server.mcp.bearer_token import router as bearer_token_router
 from mcp_auth_test_server.mcp.oauth_v2_3l import router as oauth_v2_3l_router
 from mcp_auth_test_server.openapi_examples import HEALTH_RESPONSES
+from mcp_auth_test_server.test_endpoints import (
+    maybe_apply_fault,
+)
+from mcp_auth_test_server.test_endpoints import (
+    router as test_router,
+)
 
 OPENAPI_TAGS = [
     {
@@ -197,9 +203,9 @@ def _docs_redirect_params_markup(request: Request) -> str:
     if not items:
         return ""
     return "".join(
-        f"<dt>{escape(name)}</dt><dd><code>{escape(value)}</code></dd>"
-        for name, value in items
+        f"<dt>{escape(name)}</dt><dd><code>{escape(value)}</code></dd>" for name, value in items
     )
+
 
 app = FastAPI(
     title="MCP Auth Test Server",
@@ -243,12 +249,22 @@ def _custom_openapi():
 
 app.openapi = _custom_openapi
 
+
+@app.middleware("http")
+async def injected_fault_middleware(request: Request, call_next):
+    fault_response = await maybe_apply_fault(request)
+    if fault_response is not None:
+        return fault_response
+    return await call_next(request)
+
+
 app.include_router(bearer_token_router)
 app.include_router(oauth_v2_3l_router)
 app.include_router(dynamic_registration_router)
 app.include_router(protected_resource_router)
 app.include_router(debug_router)
 app.include_router(auth_server_metadata_router)
+app.include_router(test_router, prefix="/test")
 
 
 @app.get("/health", responses=HEALTH_RESPONSES, tags=["Health"])
@@ -284,9 +300,7 @@ async def docs_oauth_callback(request: Request):
         .replace("__PARAMS_MARKUP__", params_markup)
         .replace("__FULL_URL__", escape(str(request.url)))
     )
-    return HTMLResponse(
-        html
-    )
+    return HTMLResponse(html)
 
 
 @app.get("/docs/oauth2-redirect", include_in_schema=False)

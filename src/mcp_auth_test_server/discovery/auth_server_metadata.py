@@ -9,7 +9,6 @@ from mcp_auth_test_server.discovery import (
     MOCK_AUTHORIZATION_ENDPOINT_PATH,
     MOCK_DEVICE_AUTHORIZATION_ENDPOINT_PATH,
     MOCK_REGISTRATION_ENDPOINT_PATH,
-    MOCK_SCOPES,
     MOCK_TOKEN_ENDPOINT_PATH,
     build_absolute_url,
     get_origin_url,
@@ -54,8 +53,18 @@ def build_auth_server_metadata(
         "token_endpoint_auth_methods_supported": ["none", "client_secret_post"],
         "code_challenge_methods_supported": ["S256"],
         "resource_indicators_supported": True,
-        "scopes_supported": MOCK_SCOPES,
+        "scopes_supported": _get_supported_scopes(),
     }
+
+
+def _get_supported_scopes() -> list[str]:
+    try:
+        from mcp_auth_test_server.test_endpoints import get_supported_scopes
+    except ImportError:
+        from mcp_auth_test_server.discovery import MOCK_SCOPES
+
+        return list(MOCK_SCOPES)
+    return get_supported_scopes()
 
 
 @router.get(

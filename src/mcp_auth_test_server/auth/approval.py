@@ -4,10 +4,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 
 
-class ApprovalMode(str, Enum):
+def _approval_now() -> datetime:
+    try:
+        from mcp_auth_test_server.test_endpoints import get_current_time
+    except ImportError:
+        return datetime.now(tz=UTC)
+    return get_current_time()
+
+
+class ApprovalMode(StrEnum):
     """Controls how the mock authorization server handles consent."""
 
     MANUAL = "manual"
@@ -23,7 +31,7 @@ class ApprovalRecord:
     scope: str
     decision: str  # "approved" | "denied"
     mode: ApprovalMode
-    timestamp: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
+    timestamp: datetime = field(default_factory=_approval_now)
     admin_scope_confirmed: bool = False
 
 

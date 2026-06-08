@@ -6,7 +6,6 @@ from fastapi import APIRouter, Request
 
 from mcp_auth_test_server.discovery import (
     AUTHORIZATION_SERVER_METADATA_PATH,
-    MOCK_SCOPES,
     OAUTH_RESOURCE_PATH,
     PROTECTED_RESOURCE_METADATA_PATH,
     build_absolute_url,
@@ -43,8 +42,18 @@ def build_protected_resource_metadata(
             ),
         ],
         "bearer_methods_supported": ["header"],
-        "scopes_supported": MOCK_SCOPES,
+        "scopes_supported": _get_supported_scopes(),
     }
+
+
+def _get_supported_scopes() -> list[str]:
+    try:
+        from mcp_auth_test_server.test_endpoints import get_supported_scopes
+    except ImportError:
+        from mcp_auth_test_server.discovery import MOCK_SCOPES
+
+        return list(MOCK_SCOPES)
+    return get_supported_scopes()
 
 
 @router.get(

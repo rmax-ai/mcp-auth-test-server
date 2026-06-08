@@ -14,7 +14,6 @@ from mcp_auth_test_server.auth.approval import (
     has_admin_scope,
     resolve_approval_mode,
 )
-from mcp_auth_test_server.auth.audit import AuditEvent
 from mcp_auth_test_server.auth.bearer import BearerAuthError
 from mcp_auth_test_server.auth.dynamic_registration import (
     validate_registered_authorization_client,
@@ -779,9 +778,7 @@ async def token(request: Request) -> JSONResponse:
                 scope=access_token.scope,
                 audience=expected_resource,
                 issuer=issuer,
-                refresh_token=(
-                    refresh_token.refresh_token if refresh_token is not None else None
-                ),
+                refresh_token=(refresh_token.refresh_token if refresh_token is not None else None),
             ),
         )
 

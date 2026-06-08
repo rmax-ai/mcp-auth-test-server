@@ -35,7 +35,7 @@ def validate_oauth_v21_authorization_request(
     response_type = query_params.get("response_type")
     client_id = query_params.get("client_id")
     redirect_uri = query_params.get("redirect_uri")
-    scope = query_params.get("scope") or DEFAULT_OAUTH_SCOPE
+    scope = query_params.get("scope") or _get_default_oauth_scope()
     state = query_params.get("state")
     resource = query_params.get("resource")
     code_challenge = query_params.get("code_challenge")
@@ -148,3 +148,14 @@ def validate_oauth_v21_refresh_resource(
         expected_resource=expected_resource,
         authorized_resource=authorized_resource,
     )
+
+
+def _get_default_oauth_scope() -> str:
+    try:
+        from mcp_auth_test_server.test_endpoints import get_supported_scopes
+    except ImportError:
+        return DEFAULT_OAUTH_SCOPE
+    supported_scopes = get_supported_scopes()
+    if supported_scopes:
+        return supported_scopes[0]
+    return DEFAULT_OAUTH_SCOPE

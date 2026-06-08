@@ -12,6 +12,14 @@ def redact(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()[:12]
 
 
+def _audit_now() -> datetime:
+    try:
+        from mcp_auth_test_server.test_endpoints import get_current_time
+    except ImportError:
+        return datetime.now(tz=UTC)
+    return get_current_time()
+
+
 @dataclass(slots=True)
 class AuditEvent:
     """A structured audit record for a single OAuth or MCP operation."""
@@ -33,7 +41,7 @@ class AuditEvent:
     code_hash: str | None = None
     """SHA-256 prefix of the authorization code (never the full code)."""
 
-    timestamp: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
+    timestamp: datetime = field(default_factory=_audit_now)
 
     def as_debug_dict(self) -> dict[str, object]:
         """Return a dict safe for debug endpoint exposure."""

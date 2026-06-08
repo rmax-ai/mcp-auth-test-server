@@ -11,7 +11,7 @@ from mcp_auth_test_server.auth.bearer import BearerAuthError
 from mcp_auth_test_server.auth.token_store import AccessTokenRecord, oauth_token_store
 from mcp_auth_test_server.discovery import MOCK_SCOPES
 
-DEFAULT_OAUTH_SCOPE = MOCK_SCOPES[0]  # "mcp:tools:list"
+DEFAULT_OAUTH_SCOPE = MOCK_SCOPES[0]  # fallback default
 AUTHORIZATION_CODE_GRANT_TYPE = "authorization_code"
 CLIENT_CREDENTIALS_GRANT_TYPE = "client_credentials"
 REFRESH_TOKEN_GRANT_TYPE = "refresh_token"
@@ -67,7 +67,7 @@ def validate_authorization_request(
     resource = query_params.get("resource")
     code_challenge = query_params.get("code_challenge")
     code_challenge_method = query_params.get("code_challenge_method")
-    scope = query_params.get("scope") or DEFAULT_OAUTH_SCOPE
+    scope = query_params.get("scope") or _get_default_oauth_scope()
     state = query_params.get("state")
 
     if response_type == "token":
@@ -136,7 +136,7 @@ def validate_scope(scope: str) -> None:
     """Ensure all requested scopes are supported by the mock AS."""
 
     requested_scopes = set(scope.split())
-    unsupported_scopes = requested_scopes.difference(MOCK_SCOPES)
+    unsupported_scopes = requested_scopes.difference(_get_supported_scopes())
     if unsupported_scopes:
         unsupported = ", ".join(sorted(unsupported_scopes))
         raise OAuthError(
@@ -144,6 +144,21 @@ def validate_scope(scope: str) -> None:
             description=f"Unsupported scopes: {unsupported}",
             status_code=400,
         )
+
+
+def _get_supported_scopes() -> list[str]:
+    try:
+        from mcp_auth_test_server.test_endpoints import get_supported_scopes
+    except ImportError:
+        return list(MOCK_SCOPES)
+    return get_supported_scopes()
+
+
+def _get_default_oauth_scope() -> str:
+    supported_scopes = _get_supported_scopes()
+    if supported_scopes:
+        return supported_scopes[0]
+    return DEFAULT_OAUTH_SCOPE
 
 
 def build_redirect_uri(

@@ -29,7 +29,10 @@ def check_tool_scope(
     endpoints such as ``/mcp/no-auth`` are allowed through).
     """
     from mcp_auth_test_server.mcp.base import JsonRpcError
+    from mcp_auth_test_server.test_endpoints import is_scope_enforcement_enabled
 
+    if not is_scope_enforcement_enabled():
+        return
     if token_scope is None:
         return
     if not tool.required_scope:
@@ -83,8 +86,7 @@ def check_argument_policy(
                     message="Policy denied",
                     data={
                         "reason": (
-                            f"parameter '{constraint.param}' exceeds "
-                            f"max length {constraint.value}"
+                            f"parameter '{constraint.param}' exceeds max length {constraint.value}"
                         ),
                         "tool": tool_name,
                     },
@@ -97,8 +99,7 @@ def check_argument_policy(
                     message="Policy denied",
                     data={
                         "reason": (
-                            f"parameter '{constraint.param}' is below "
-                            f"min length {constraint.value}"
+                            f"parameter '{constraint.param}' is below min length {constraint.value}"
                         ),
                         "tool": tool_name,
                     },
@@ -111,8 +112,7 @@ def check_argument_policy(
                     message="Policy denied",
                     data={
                         "reason": (
-                            f"parameter '{constraint.param}' must equal "
-                            f"{constraint.value!r}"
+                            f"parameter '{constraint.param}' must equal {constraint.value!r}"
                         ),
                         "tool": tool_name,
                     },
@@ -141,10 +141,7 @@ def check_argument_policy(
                         code=-32002,
                         message="Policy denied",
                         data={
-                            "reason": (
-                                f"parameter '{param}' contains blocked "
-                                f"pattern {pattern!r}"
-                            ),
+                            "reason": (f"parameter '{param}' contains blocked pattern {pattern!r}"),
                             "tool": tool_name,
                         },
                     )
@@ -158,10 +155,7 @@ def check_argument_policy(
                 code=-32002,
                 message="Policy denied",
                 data={
-                    "reason": (
-                        f"environment variable {policy.environment_flag} "
-                        "must be set"
-                    ),
+                    "reason": (f"environment variable {policy.environment_flag} must be set"),
                     "tool": tool_name,
                 },
             )
@@ -176,6 +170,10 @@ def filter_tools_by_scope(
     When *token_scope* is ``None`` all tools are returned
     (unauthenticated bypass).
     """
+    from mcp_auth_test_server.test_endpoints import is_scope_enforcement_enabled
+
+    if not is_scope_enforcement_enabled():
+        return list(tools.values())
     if token_scope is None:
         return list(tools.values())
 

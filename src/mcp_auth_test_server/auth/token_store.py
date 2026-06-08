@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from secrets import compare_digest, token_urlsafe
 
 from mcp_auth_test_server.auth.approval import ApprovalRecord
@@ -415,7 +415,9 @@ class OAuthTokenStore:
 
     @staticmethod
     def _now() -> datetime:
-        return datetime.now(tz=UTC)
+        from mcp_auth_test_server.test_endpoints import get_current_time
+
+        return get_current_time()
 
     def _seed_mock_clients(self) -> None:
         """Install the fixed clients used by earlier project phases."""

@@ -18,6 +18,8 @@ MOCK_DEVICE_AUTHORIZATION_ENDPOINT_PATH = "/oauth/device/authorize"
 TEST_BEARER_TOKEN_MINT_PATH = "/test-auth/bearer-token/mint"
 
 MOCK_SCOPES = [
+    "mcp:read",
+    "mcp:write",
     "mcp:tools:list",
     "mcp:tools:echo",
     "mcp:tools:read",

@@ -56,6 +56,7 @@
   const navItems = [
     { href: `${base}/`, label: "Overview" },
     { href: `${base}/flows/`, label: "Flows" },
+    { href: `${base}/oauth-dcr-cimd/`, label: "DCR & CIMD" },
     { href: `${base}/reference/`, label: "Reference" },
   ];
 </script>

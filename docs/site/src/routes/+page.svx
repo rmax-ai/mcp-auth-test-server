@@ -124,6 +124,7 @@ uv run mcp-auth call http://127.0.0.1:8765/mcp/oauth initialize
 ## What the docs site covers
 
 - <a href="flows/">Flow walkthroughs</a> with exact CLI commands for each auth mode
+- <a href="oauth-dcr-cimd/">DCR and CIMD</a> — dynamic registration vs client ID metadata document demos, including sequence diagrams, example scripts, and a comparison table
 - <a href="reference/">Reference</a> for endpoints, discovery documents, policy behavior, CIMD fixture clients, and debug routes
 - Enough context to verify whether a client implementation is doing the right thing
 

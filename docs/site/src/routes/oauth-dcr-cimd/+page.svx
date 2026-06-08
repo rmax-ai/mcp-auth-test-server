@@ -1,0 +1,102 @@
+---
+title: DCR and CIMD flows
+description: Compare dynamic client registration and client metadata URL flows for the MCP OAuth test server.
+---
+
+<div class="eyebrow">OAuth patterns</div>
+
+# DCR and CIMD flows
+
+This server demonstrates two ways an MCP client can become known to the
+authorization server:
+
+- **Dynamic Client Registration (DCR)** at `/oauth/register`
+- **Client ID Metadata Documents (CIMD)** where the `client_id` is a hosted
+  metadata URL
+
+## DCR sequence
+
+```mermaid
+sequenceDiagram
+    participant Client as MCP Client
+    participant AS as Authorization Server
+    participant User as User/Browser
+    participant MCP as Protected MCP Server
+
+    Client->>AS: GET /.well-known/oauth-authorization-server
+    Client->>AS: POST /register with client metadata
+    AS-->>Client: client_id (+ optional client_secret)
+    Client->>User: Open authorization URL with PKCE
+    User->>AS: Approve consent
+    AS-->>Client: Redirect with authorization code
+    Client->>AS: POST /token with code + code_verifier
+    AS-->>Client: access_token
+    Client->>MCP: MCP request with Bearer token
+    MCP-->>Client: Protected result
+```
+
+## CIMD sequence
+
+```mermaid
+sequenceDiagram
+    participant Client as MCP Client
+    participant AS as Authorization Server
+    participant Metadata as Client Metadata URL
+    participant User as User/Browser
+    participant MCP as Protected MCP Server
+
+    Client->>AS: /authorize?client_id=https://client.example.com/metadata.json
+    AS->>Metadata: GET client metadata document
+    Metadata-->>AS: Client metadata
+    AS->>AS: Validate metadata + redirect_uri + PKCE
+    User->>AS: Approve consent
+    AS-->>Client: Redirect with authorization code
+    Client->>AS: POST /token with code + code_verifier
+    AS-->>Client: access_token
+    Client->>MCP: MCP request with Bearer token
+    MCP-->>Client: Protected result
+```
+
+## Comparison
+
+| Concern | DCR | CIMD |
+| --- | --- | --- |
+| Client identity | Server-issued `client_id` | URL-valued `client_id` |
+| Initial step | POST metadata to `/oauth/register` | Host metadata at a reachable URL |
+| Server state | Registration record lives in the token store | Resolver cache plus resolved client record |
+| Extra security work | Registration input validation | SSRF protection, fetch limits, URL validation |
+| Best fit | Test harnesses and ad hoc clients | Self-describing clients and metadata-driven demos |
+| Local dev | Simple | Requires development-mode localhost exceptions |
+
+## Example usage
+
+Run the server first:
+
+```bash
+uv sync --dev
+uv run uvicorn mcp_auth_test_server.app:app --port 8765
+```
+
+Run the DCR example:
+
+```bash
+uv run python examples/dcr_client_flow.py --base-url http://127.0.0.1:8765
+```
+
+Run the CIMD example:
+
+```bash
+uv run python examples/cimd_client_flow.py --base-url http://127.0.0.1:8765
+```
+
+## What to inspect
+
+- `GET /debug/traces` for structured DCR and CIMD trace events
+- `GET /debug/clients` to confirm registered and resolved client records
+- `GET /debug/authorizations` and `GET /debug/tokens` to inspect the issued flow state
+
+## Source links
+
+- [`examples/dcr_client_flow.py`](../../../../examples/dcr_client_flow.py)
+- [`examples/cimd_client_flow.py`](../../../../examples/cimd_client_flow.py)
+- [`docs/dcr-vs-cimd.md`](../../../../docs/dcr-vs-cimd.md)

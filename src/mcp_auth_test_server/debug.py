@@ -6,6 +6,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from mcp_auth_test_server.auth.token_store import oauth_token_store
+from mcp_auth_test_server.auth.trace_logger import trace_logger
 
 router = APIRouter()
 
@@ -93,3 +94,10 @@ async def debug_audit() -> JSONResponse:
     """Return all recorded audit events."""
     events = [event.as_debug_dict() for event in oauth_token_store.get_audit_events()]
     return JSONResponse({"audit_events": events})
+
+
+@router.get("/debug/traces")
+async def debug_traces(event_type: str | None = None, limit: int = 50) -> JSONResponse:
+    """Return structured OAuth trace events from the trace logger."""
+    events = trace_logger.get_events(event_type=event_type, limit=limit)
+    return JSONResponse({"trace_events": [event.as_debug_dict() for event in events]})

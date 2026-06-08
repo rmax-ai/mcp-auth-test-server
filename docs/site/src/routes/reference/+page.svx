@@ -99,7 +99,7 @@ a public client, so `dev-public-client` is the matching seeded fixture there.
 The server also supports URL-valued `client_id` values. When a client starts an
 authorization request with a `client_id` that looks like an HTTPS URL, the
 server fetches a Client ID Metadata Document from that URL, validates it, and
-registers it as a resolved client. See [DCR and CIMD](/oauth-dcr-cimd/).
+registers it as a resolved client. See [DCR and CIMD](oauth-dcr-cimd/).
 
 ## Debug endpoints
 

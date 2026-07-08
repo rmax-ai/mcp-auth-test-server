@@ -28,7 +28,7 @@ dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
     "ruff>=0.6.0",
-    "pyjwt>=2.9.0",
+    "pyjwt>=2.13.0",
     "cryptography>=43.0.0",
 ]
 
